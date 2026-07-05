@@ -1,0 +1,6 @@
+﻿node_modules
+dist
+.DS_Store
+wishlist-backup-*.json
+wishlist-export-*.md
+*.local
