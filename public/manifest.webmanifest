@@ -1,0 +1,31 @@
+{
+  "name": "買いものリスト",
+  "short_name": "買いもの",
+  "description": "欲しい気持ちを一度置いて、納得して買うためのリスト",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f2ed",
+  "theme_color": "#31584f",
+  "icons": [
+    {
+      "src": "icons/wishlist-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/wishlist-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/wishlist-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

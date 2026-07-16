@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color: #24302f;
   background: #f4f2ed;
   font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Sans", sans-serif;
@@ -10,60 +10,104 @@ button { border: 1px solid #cfc8bd; border-radius: 8px; background: #fffdf8; col
 button:hover { border-color: #8a9b89; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 input, select, textarea { width: 100%; border: 1px solid #d4cdc2; border-radius: 8px; background: #fffdf8; color: #24302f; padding: 10px 11px; }
-textarea { min-height: 76px; resize: vertical; }
+textarea { min-height: 68px; resize: vertical; }
 label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: #52605d; }
-header { padding: 24px 18px 14px; max-width: 980px; margin: 0 auto; }
-h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: 0; }
-header p { margin: 0; color: #61706d; line-height: 1.7; }
-main { max-width: 980px; margin: 0 auto; padding: 0 14px 96px; }
-.panel, .theme-card { background: #fffaf1; border: 1px solid #ded6c8; border-radius: 8px; box-shadow: 0 8px 24px rgba(59, 48, 33, .07); }
+header { padding: 20px 18px 10px; max-width: 720px; margin: 0 auto; }
+h1 { font-size: 26px; margin: 0 0 6px; }
+header p { margin: 0; color: #61706d; line-height: 1.6; font-size: 14px; }
+main { max-width: 720px; margin: 0 auto; padding: 0 14px 96px; }
+
+.panel, .theme-card { background: #fffaf1; border: 1px solid #ded6c8; border-radius: 10px; box-shadow: 0 8px 24px rgba(59, 48, 33, .07); }
 .panel { padding: 14px; margin: 12px 0; }
 .panel-title { display: flex; align-items: center; gap: 8px; font-weight: 800; margin-bottom: 12px; }
-.form { display: grid; gap: 12px; }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.actions.compact { flex-wrap: nowrap; }
 .primary { background: #31584f; border-color: #31584f; color: white; }
-.filters { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 8px; }
+.danger-link { border-color: transparent; background: transparent; color: #9b2c2c; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* クイック追加：起動してすぐ名前だけで登録できる導線 */
+.quick-add { display: flex; gap: 8px; margin: 12px 0; }
+.quick-add input { flex: 1; padding: 13px 14px; font-size: 16px; border-radius: 10px; }
+.quick-add button { padding: 0 18px; border-radius: 10px; }
+.view-note { margin: 0 2px 10px; color: #687672; font-size: 13px; line-height: 1.6; }
+
+.filters { display: grid; grid-template-columns: 1.6fr 1fr; gap: 8px; margin: 10px 0; }
 .search-box { position: relative; display: block; }
-.search-box svg { position: absolute; left: 10px; top: 11px; color: #71807c; }
-.search-box input { padding-left: 36px; }
+.search-box svg { position: absolute; left: 10px; top: 12px; color: #71807c; }
+.search-box input { padding-left: 34px; }
+
 .group { margin: 12px 0; }
 .group-toggle { width: 100%; justify-content: flex-start; background: #ebe5d8; border-color: #d8cebe; font-weight: 800; }
 .group-toggle b { margin-left: auto; background: #fffaf1; border-radius: 999px; padding: 2px 9px; }
-.card-list { display: grid; gap: 12px; margin-top: 10px; }
+.card-list { display: grid; gap: 10px; margin-top: 10px; }
 .theme-card { padding: 14px; }
-.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-h3 { margin: 0 0 4px; font-size: 19px; }
-.card-head p, .candidate p, .note, .muted { margin: 0; color: #687672; line-height: 1.6; }
-.info-grid { display: grid; grid-template-columns: 104px 1fr; gap: 8px 10px; padding: 10px 0; border-top: 1px solid #eee5d8; border-bottom: 1px solid #eee5d8; }
-.info-grid span { color: #687672; font-size: 13px; }
-.info-grid p { margin: 0; white-space: pre-wrap; }
-.candidates { margin-top: 12px; }
-summary { cursor: pointer; font-weight: 800; color: #31584f; }
-.candidate { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #eee5d8; padding: 12px 0; }
-.candidate-form, .purchase-box { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border-radius: 8px; background: #f5efe4; }
-.candidate-form { grid-template-columns: repeat(2, 1fr); }
-.candidate-form textarea, .candidate-form .actions { grid-column: 1 / -1; }
-.empty { color: #687672; background: #fffaf1; border: 1px dashed #d7cdbd; border-radius: 8px; padding: 18px; text-align: center; }
+.card-head { margin-bottom: 8px; }
+h3 { margin: 0 0 3px; font-size: 18px; }
+.card-head p, .muted, .note { margin: 0; color: #687672; line-height: 1.6; font-size: 13px; }
+.reason { margin: 6px 0 0; line-height: 1.6; white-space: pre-wrap; }
+.muted { white-space: pre-wrap; }
+.theme-card .actions { margin-top: 10px; }
+
+/* 候補（写真が主役） */
+.candidate-list { display: grid; gap: 8px; margin-top: 10px; }
+.candidate { display: flex; gap: 10px; align-items: center; border-top: 1px solid #eee5d8; padding-top: 8px; }
+.candidate-body { flex: 1; min-width: 0; }
+.candidate-body b { display: block; }
+.candidate-body p { margin: 2px 0 0; color: #687672; font-size: 13px; }
+.candidate-actions { display: flex; gap: 6px; }
+.candidate-actions button { padding: 8px; }
+.thumb { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: pointer; border: 1px solid #ded6c8; background: #f5efe4; }
+.photo-placeholder { display: flex; align-items: center; justify-content: center; color: #8a958f; font-size: 11px; }
+
+/* カード内フォーム（編集・候補追加・購入は必要なときだけ開く） */
+.inline-form { display: grid; gap: 10px; margin-top: 10px; padding: 12px; border-radius: 8px; background: #f5efe4; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.photo-picker { position: relative; }
+.photo-picker input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; height: 100%; }
+.photo-picker-hint { display: flex; gap: 8px; align-items: center; justify-content: center; border: 1px dashed #b9ad99; border-radius: 8px; padding: 22px 10px; color: #6f7d78; background: #fffdf8; }
+.photo-preview { width: 96px; height: 96px; border-radius: 8px; object-fit: cover; border: 1px solid #ded6c8; }
+
+/* 補充リスト */
+.refill-row { display: flex; gap: 10px; align-items: center; background: #fffaf1; border: 1px solid #ded6c8; border-radius: 10px; padding: 12px 14px; }
+.refill-row.waiting { background: #f7f3ea; }
+.refill-body { flex: 1; min-width: 0; }
+.refill-body p { margin: 2px 0 0; color: #687672; font-size: 13px; }
+.refill-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.refill-edit { flex: 1; margin-top: 0; }
+
+/* 買った画面 */
+.bought-row { display: flex; gap: 12px; align-items: flex-start; }
+.bought-row .thumb { width: 76px; height: 76px; }
+.bought-body { flex: 1; min-width: 0; }
+.bought-body p { margin: 3px 0 0; font-size: 13px; color: #52605d; }
+.sat { font-weight: 700; color: #31584f; }
+
+/* 写真の拡大表示 */
+.photo-overlay { position: fixed; inset: 0; background: rgba(20, 24, 22, .88); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+.photo-full { max-width: 100%; max-height: 100%; border-radius: 10px; object-fit: contain; }
+.photo-overlay .photo-placeholder { color: #ddd; }
+.overlay-close { position: absolute; top: 14px; right: 14px; background: rgba(255, 255, 255, .12); border-color: transparent; color: #fff; border-radius: 999px; padding: 10px; }
+
+.empty { color: #687672; background: #fffaf1; border: 1px dashed #d7cdbd; border-radius: 8px; padding: 16px; text-align: center; margin: 0; }
 .settings-view { display: grid; gap: 12px; }
 .preview { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border-radius: 8px; background: #f5efe4; }
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.stats span { background: #fffaf1; border: 1px solid #e4dacb; border-radius: 8px; padding: 8px; }
+.stats span { background: #fffaf1; border: 1px solid #e4dacb; border-radius: 8px; padding: 8px; font-size: 13px; }
 .error { color: #9b2c2c; margin: 0; }
-.warning { color: #8a5b16; margin: 0; }
+.warning { color: #8a5b16; margin: 0; font-size: 13px; }
 .success { color: #276749; font-weight: 800; }
+.note b { color: #52605d; }
 code { background: #eee5d8; border-radius: 6px; padding: 2px 6px; }
-ul { padding-left: 20px; line-height: 1.8; }
+ul { padding-left: 20px; line-height: 1.8; margin: 8px 0 0; font-size: 14px; }
+
 .bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: rgba(255, 250, 241, .96); border-top: 1px solid #ded6c8; backdrop-filter: blur(12px); }
 .bottom-nav button { flex-direction: column; gap: 3px; padding: 8px 4px; font-size: 12px; border-color: transparent; background: transparent; }
 .bottom-nav button.active { color: #fff; background: #31584f; }
-@media (max-width: 760px) {
-  header { padding-top: 18px; }
-  h1 { font-size: 24px; }
-  .grid-3, .filters, .candidate-form, .stats { grid-template-columns: 1fr; }
-  .card-head, .candidate { flex-direction: column; }
-  .actions.compact { width: 100%; }
-  .actions.compact button { flex: 1; }
-  .info-grid { grid-template-columns: 92px 1fr; }
+
+@media (max-width: 560px) {
+  header { padding-top: 16px; }
+  h1 { font-size: 22px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .refill-row { flex-wrap: wrap; }
+  .refill-actions { width: 100%; }
+  .refill-actions .primary { flex: 1; }
 }
