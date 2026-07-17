@@ -31,6 +31,7 @@ main { max-width: 720px; margin: 0 auto; padding: 0 14px 96px; }
 .view-note { margin: 0 2px 10px; color: #687672; font-size: 13px; line-height: 1.6; }
 
 .filters { display: grid; grid-template-columns: 1.6fr 1fr; gap: 8px; margin: 10px 0; }
+.search-only { margin: 10px 0; }
 .search-box { position: relative; display: block; }
 .search-box svg { position: absolute; left: 10px; top: 12px; color: #71807c; }
 .search-box input { padding-left: 34px; }

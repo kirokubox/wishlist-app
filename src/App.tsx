@@ -6,7 +6,7 @@ import "./styles.css";
 // ---------- 型 ----------
 
 type Category = "服" | "家電" | "ガジェット" | "日用品" | "家具・インテリア" | "趣味" | "美容・身だしなみ" | "その他";
-type ThemeStatus = "気になる" | "探し中" | "比較中" | "買う予定" | "保留" | "買った" | "やめた";
+type ThemeStatus = "未購入" | "買った" | "やめた";
 type Satisfaction = 1 | 2 | 3 | 4 | 5;
 type ActiveView = "search" | "refill" | "bought" | "settings";
 
@@ -25,6 +25,7 @@ type WishlistTheme = {
   title: string;
   category: Category;
   status: ThemeStatus;
+  releaseDate: string;
   reason: string;
   memo: string;
   purchasedDate: string;
@@ -54,9 +55,8 @@ type WishlistData = { themes: WishlistTheme[]; refillItems: RefillItem[] };
 
 const DATA_KEY = "yuki-wishlist-data";
 const VIEW_KEY = "yuki-wishlist-active-view";
+const PRE_V3_BACKUP_PREFIX = "yuki-wishlist-data-backup-pre-v3-";
 const categories: Category[] = ["服", "家電", "ガジェット", "日用品", "家具・インテリア", "趣味", "美容・身だしなみ", "その他"];
-const statuses: ThemeStatus[] = ["気になる", "探し中", "比較中", "買う予定", "保留", "買った", "やめた"];
-const searchGroups: ThemeStatus[] = ["買う予定", "比較中", "探し中", "気になる", "保留", "やめた"];
 const sats: Satisfaction[] = [5, 4, 3, 2, 1];
 const satLabels: Record<Satisfaction, string> = { 5: "かなり満足", 4: "よかった", 3: "普通", 2: "微妙", 1: "後悔" };
 const DEFAULT_INTERVAL_MONTHS = 3;
@@ -68,10 +68,16 @@ const today = () => {
 };
 const makeId = () => `${Date.now().toString(36)}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
+const normalizeThemeStatus = (value: unknown): ThemeStatus => value === "買った" ? "買った" : value === "やめた" ? "やめた" : "未購入";
 const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T) => (list.includes(v as T) ? (v as T) : fallback);
 const fmtPrice = (v: number | null) => (v === null ? "" : `${v.toLocaleString("ja-JP")}円`);
 const fmtDate = (v: string) => (v ? v.slice(0, 10) : "");
+const fmtJapaneseDate = (v: string) => {
+  const [year, month, day] = v.slice(0, 10).split("-").map(Number);
+  return year && month && day ? `${year}年${month}月${day}日` : "";
+};
+const releaseDateLabel = (releaseDate: string) => releaseDate ? `${releaseDate < today() ? "発売済み：" : ""}${fmtJapaneseDate(releaseDate)}${releaseDate < today() ? "" : "発売"}` : "";
 const addMonths = (dateStr: string, months: number) => {
   const d = new Date(`${dateStr.slice(0, 10)}T12:00:00`);
   d.setMonth(d.getMonth() + months);
@@ -113,7 +119,8 @@ const normalizeTheme = (value: unknown): WishlistTheme | null => {
     id: str(item.id),
     title: str(item.title),
     category: oneOf(item.category, categories, "その他"),
-    status: oneOf(item.status, statuses, "探し中"),
+    status: normalizeThemeStatus(item.status),
+    releaseDate: str(item.releaseDate),
     reason: str(item.reason),
     memo: str(item.memo),
     purchasedDate: str(item.purchasedDate),
@@ -164,8 +171,7 @@ const convertV1 = (rawThemes: unknown[]): WishlistData => {
       });
       return;
     }
-    const oldStatus = str(item.status);
-    const status = oneOf(oldStatus === "そろそろ買う" || oldStatus === "次回買う" ? "探し中" : oldStatus, statuses, "探し中");
+    const status = normalizeThemeStatus(item.status);
     const purchaseNote = [str(item.goodAfterPurchase), str(item.regretMemo)].filter(Boolean).join(" / ");
     const rawSat = typeof item.satisfaction === "number" && sats.includes(item.satisfaction as Satisfaction) ? (item.satisfaction as Satisfaction) : null;
     const candidates = (Array.isArray(item.candidates) ? item.candidates : []).map((c) => {
@@ -187,6 +193,7 @@ const convertV1 = (rawThemes: unknown[]): WishlistData => {
       title: str(item.title),
       category: oneOf(item.category, categories, "その他"),
       status,
+      releaseDate: str(item.releaseDate),
       reason: str(item.reason),
       memo: str(item.memo),
       purchasedDate: str(item.purchasedDate),
@@ -202,13 +209,13 @@ const convertV1 = (rawThemes: unknown[]): WishlistData => {
   return { themes, refillItems };
 };
 
-// localStorage・バックアップJSONの両方をここで受ける（v1配列 / v1バックアップ / v2）
+// localStorage・バックアップJSONの両方をここで受ける（v1配列 / v1バックアップ / v2 / v3）
 const parseStoredData = (parsed: unknown): WishlistData | null => {
   if (Array.isArray(parsed)) return convertV1(parsed);
   if (!parsed || typeof parsed !== "object") return null;
   const root = parsed as Record<string, unknown>;
   if (!Array.isArray(root.themes)) return null;
-  if (root.version === 2 || Array.isArray(root.refillItems)) {
+  if (root.version === 2 || root.version === 3 || Array.isArray(root.refillItems)) {
     return {
       themes: (root.themes as unknown[]).map(normalizeTheme).filter(Boolean) as WishlistTheme[],
       refillItems: (Array.isArray(root.refillItems) ? root.refillItems : []).map(normalizeRefill).filter(Boolean) as RefillItem[],
@@ -221,7 +228,19 @@ const loadData = (): WishlistData => {
   try {
     const raw = localStorage.getItem(DATA_KEY);
     if (!raw) return { themes: [], refillItems: [] };
-    return parseStoredData(JSON.parse(raw)) ?? { themes: [], refillItems: [] };
+    const parsed = JSON.parse(raw);
+    const isVersion3 = !Array.isArray(parsed) && parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).version === 3;
+    if (!isVersion3) {
+      const backupKey = `${PRE_V3_BACKUP_PREFIX}${today().replaceAll("-", "")}`;
+      if (!localStorage.getItem(backupKey)) {
+        try {
+          localStorage.setItem(backupKey, raw);
+        } catch {
+          // 容量不足などで退避できなくても、既存データの読み込みは続ける。
+        }
+      }
+    }
+    return parseStoredData(parsed) ?? { themes: [], refillItems: [] };
   } catch {
     return { themes: [], refillItems: [] };
   }
@@ -288,16 +307,19 @@ const buildImportPreview = (text: string, existing: WishlistData): ImportPreview
 const md = (v: unknown) => String(v ?? "").replaceAll("\r", " ").replaceAll("\n", " ").trim();
 
 const createMarkdown = ({ themes, refillItems }: WishlistData) => {
-  const searching = themes.filter((t) => t.status !== "買った" && t.status !== "やめた");
+  const unpurchased = themes.filter((t) => t.status === "未購入");
+  const scheduled = unpurchased.filter((t) => t.releaseDate).sort((a, b) => a.releaseDate.localeCompare(b.releaseDate));
+  const withCandidates = unpurchased.filter((t) => !t.releaseDate && t.candidates.length > 0);
+  const themeOnly = unpurchased.filter((t) => !t.releaseDate && t.candidates.length === 0);
   const bought = themes.filter((t) => t.status === "買った");
   const stopped = themes.filter((t) => t.status === "やめた");
   const visibleRefills = refillItems.filter(isRefillVisible);
   const waitingRefills = refillItems.filter((item) => !isRefillVisible(item));
   const candidateBlock = (c: WishlistCandidate) => `- 店名：${md(c.shop)} ／ 金額：${fmtPrice(c.price)} ／ 写真：${c.photoId ? "あり" : "なし"} ／ 登録日：${fmtDate(c.createdAt)}${c.memo ? ` ／ メモ：${md(c.memo)}` : ""}`;
-  const themeBlock = (t: WishlistTheme) => `### ${md(t.title)}\n\n- 状態：${t.status}\n- カテゴリ：${t.category}\n- 欲しい理由：${md(t.reason)}\n- メモ：${md(t.memo)}\n- 登録日：${fmtDate(t.createdAt)}${t.candidates.length ? `\n\n候補：\n\n${t.candidates.map(candidateBlock).join("\n")}` : ""}`;
+  const themeBlock = (t: WishlistTheme) => `### ${md(t.title)}\n\n- カテゴリ：${t.category}${t.releaseDate ? `\n- 発売日：${t.releaseDate}` : ""}\n- 欲しい理由：${md(t.reason)}\n- メモ：${md(t.memo)}\n- 登録日：${fmtDate(t.createdAt)}${t.candidates.length ? `\n\n候補：\n\n${t.candidates.map(candidateBlock).join("\n")}` : ""}`;
   const boughtBlock = (t: WishlistTheme) => {
     const candidate = t.candidates.find((c) => c.id === t.purchasedCandidateId);
-    return `### ${md(t.title)}\n\n- カテゴリ：${t.category}\n- 買った候補：${candidate ? md(candidate.shop) : "テーマそのもの"}\n- 購入日：${fmtDate(t.purchasedDate)}\n- 購入価格：${fmtPrice(t.purchasedPrice)}\n- 満足度：${t.satisfaction ? `${t.satisfaction}：${satLabels[t.satisfaction]}` : "未記入"}\n- 一言：${md(t.purchaseNote)}`;
+    return `### ${md(t.title)}\n\n- カテゴリ：${t.category}${t.releaseDate ? `\n- 発売日：${t.releaseDate}` : ""}\n- 買った候補：${candidate ? md(candidate.shop) : "テーマそのもの"}\n- 購入日：${fmtDate(t.purchasedDate)}\n- 購入価格：${fmtPrice(t.purchasedPrice)}\n- 満足度：${t.satisfaction ? `${t.satisfaction}：${satLabels[t.satisfaction]}` : "未記入"}\n- 一言：${md(t.purchaseNote)}`;
   };
   const refillLine = (item: RefillItem) => `- ${md(item.name)}（前回：${fmtDate(lastPurchase(item)) || "未購入"} ／ 間隔：${item.intervalMonths}ヶ月${isRefillVisible(item) ? "" : ` ／ 次回表示：${nextShowDate(item)}`}）`;
   return `# 買いものリスト エクスポート
@@ -305,14 +327,22 @@ const createMarkdown = ({ themes, refillItems }: WishlistData) => {
 ## 出力情報
 
 - 出力日時：${now()}
-- 探し中テーマ：${searching.length}
+- 未購入テーマ：${unpurchased.length}
 - 買ったテーマ：${bought.length}
 - やめたテーマ：${stopped.length}
 - 補充リスト：${refillItems.length}
 
-## 探し中のテーマ
+## ほしいもの（発売予定）
 
-${searching.map(themeBlock).join("\n\n") || "該当なし"}
+${scheduled.map(themeBlock).join("\n\n") || "該当なし"}
+
+## ほしいもの（候補あり）
+
+${withCandidates.map(themeBlock).join("\n\n") || "該当なし"}
+
+## ほしいもの（テーマだけ）
+
+${themeOnly.map(themeBlock).join("\n\n") || "該当なし"}
 
 ## 買ったテーマ
 
@@ -377,7 +407,7 @@ function PhotoThumb({ photoId, className, onClick }: { photoId: string | null; c
 
 // ---------- 本体 ----------
 
-const emptyThemeDraft = { title: "", status: "探し中" as ThemeStatus, category: "その他" as Category, reason: "", memo: "" };
+const emptyThemeDraft = { title: "", category: "その他" as Category, releaseDate: "", reason: "", memo: "" };
 const emptyCandidateDraft = { shop: "", price: "", memo: "", file: null as File | null, previewUrl: null as string | null };
 const emptyPurchaseDraft = () => ({ candidateId: "", date: today(), price: "", satisfaction: "", note: "" });
 
@@ -389,8 +419,8 @@ function App() {
   });
   const [quickTheme, setQuickTheme] = useState("");
   const [quickRefill, setQuickRefill] = useState("");
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "買う予定": true, "比較中": true, "探し中": true });
-  const [searchFilters, setSearchFilters] = useState({ keyword: "", status: "すべて" });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ "発売予定": true, "候補あり": true, "テーマだけ": true });
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [boughtFilters, setBoughtFilters] = useState({ keyword: "", satisfaction: "すべて" });
   const [editingThemeId, setEditingThemeId] = useState("");
   const [themeDraft, setThemeDraft] = useState(emptyThemeDraft);
@@ -408,7 +438,7 @@ function App() {
   const [importMessage, setImportMessage] = useState("");
 
   useEffect(() => {
-    localStorage.setItem(DATA_KEY, JSON.stringify({ version: 2, themes, refillItems }));
+    localStorage.setItem(DATA_KEY, JSON.stringify({ version: 3, themes, refillItems }));
   }, [themes, refillItems]);
   useEffect(() => localStorage.setItem(VIEW_KEY, activeView), [activeView]);
 
@@ -423,7 +453,7 @@ function App() {
     e.preventDefault();
     const title = quickTheme.trim();
     if (!title) return;
-    updateThemes((all) => [{ id: makeId(), title, category: "その他", status: "探し中", reason: "", memo: "", purchasedDate: "", purchasedPrice: null, purchaseNote: "", purchasedCandidateId: "", satisfaction: null, candidates: [], createdAt: now(), updatedAt: now() }, ...all]);
+    updateThemes((all) => [{ id: makeId(), title, category: "その他", status: "未購入", releaseDate: "", reason: "", memo: "", purchasedDate: "", purchasedPrice: null, purchaseNote: "", purchasedCandidateId: "", satisfaction: null, candidates: [], createdAt: now(), updatedAt: now() }, ...all]);
     setQuickTheme("");
   };
 
@@ -439,7 +469,7 @@ function App() {
 
   const startEditTheme = (theme: WishlistTheme) => {
     setEditingThemeId(theme.id);
-    setThemeDraft({ title: theme.title, status: theme.status, category: theme.category, reason: theme.reason, memo: theme.memo });
+    setThemeDraft({ title: theme.title, category: theme.category, releaseDate: theme.releaseDate, reason: theme.reason, memo: theme.memo });
     setCandidateFormThemeId("");
     setPurchaseThemeId("");
   };
@@ -448,6 +478,17 @@ function App() {
     e.preventDefault();
     if (!themeDraft.title.trim()) return;
     updateTheme(editingThemeId, (t) => ({ ...t, ...themeDraft, title: themeDraft.title.trim() }));
+    setEditingThemeId("");
+  };
+
+  const stopTheme = (theme: WishlistTheme) => {
+    if (!confirm(`「${theme.title}」をやめた記録へ移しますか？`)) return;
+    updateTheme(theme.id, (t) => ({ ...t, status: "やめた" }));
+    setEditingThemeId("");
+  };
+
+  const restoreTheme = (theme: WishlistTheme) => {
+    updateTheme(theme.id, (t) => ({ ...t, status: "未購入" }));
     setEditingThemeId("");
   };
 
@@ -552,8 +593,8 @@ function App() {
   };
 
   const cancelPurchaseRecord = (theme: WishlistTheme) => {
-    if (!confirm("購入記録を取り消して「探し中」に戻しますか？")) return;
-    updateTheme(theme.id, (t) => ({ ...t, status: "探し中", purchasedDate: "", purchasedPrice: null, purchaseNote: "", purchasedCandidateId: "", satisfaction: null }));
+    if (!confirm("購入記録を取り消して「ほしいもの」に戻しますか？")) return;
+    updateTheme(theme.id, (t) => ({ ...t, status: "未購入", purchasedDate: "", purchasedPrice: null, purchaseNote: "", purchasedCandidateId: "", satisfaction: null }));
     setPurchaseThemeId("");
   };
 
@@ -600,7 +641,7 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 2, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
+  const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 3, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
   const exportMarkdown = () => downloadText(`wishlist-export-${today()}.md`, createMarkdown({ themes, refillItems }), "text/markdown");
   const readImportFile = async (file?: File) => {
     setImportMessage("");
@@ -628,7 +669,12 @@ function App() {
     const text = [theme.title, theme.reason, theme.memo, ...theme.candidates.flatMap((c) => [c.shop, c.memo])].join(" ").toLowerCase();
     return text.includes(keyword.toLowerCase());
   };
-  const searchThemes = themes.filter((t) => t.status !== "買った" && matchesKeyword(t, searchFilters.keyword) && (searchFilters.status === "すべて" || t.status === searchFilters.status));
+  const searchThemes = themes.filter((t) => t.status !== "買った" && matchesKeyword(t, searchKeyword));
+  const activeSearchThemes = searchThemes.filter((t) => t.status === "未購入");
+  const scheduledThemes = activeSearchThemes.filter((t) => t.releaseDate).sort((a, b) => a.releaseDate.localeCompare(b.releaseDate));
+  const candidateThemes = activeSearchThemes.filter((t) => !t.releaseDate && t.candidates.length > 0);
+  const themeOnlyThemes = activeSearchThemes.filter((t) => !t.releaseDate && t.candidates.length === 0);
+  const stoppedThemes = searchThemes.filter((t) => t.status === "やめた");
   const boughtThemes = themes
     .filter((t) => t.status === "買った" && matchesKeyword(t, boughtFilters.keyword) && (boughtFilters.satisfaction === "すべて" || String(t.satisfaction ?? "") === boughtFilters.satisfaction))
     .sort((a, b) => (b.purchasedDate || b.updatedAt).localeCompare(a.purchasedDate || a.updatedAt));
@@ -641,14 +687,17 @@ function App() {
     <form className="inline-form" onSubmit={submitThemeEdit}>
       <label>テーマ名<input value={themeDraft.title} onChange={(e) => setThemeDraft({ ...themeDraft, title: e.target.value })} required /></label>
       <div className="grid-2">
-        <label>状態<select value={themeDraft.status} onChange={(e) => setThemeDraft({ ...themeDraft, status: e.target.value as ThemeStatus })}>{statuses.filter((s) => s !== "買った").map((v) => <option key={v}>{v}</option>)}</select></label>
         <label>カテゴリ<select value={themeDraft.category} onChange={(e) => setThemeDraft({ ...themeDraft, category: e.target.value as Category })}>{categories.map((v) => <option key={v}>{v}</option>)}</select></label>
+        <label>発売日（任意）<input type="date" value={themeDraft.releaseDate} onChange={(e) => setThemeDraft({ ...themeDraft, releaseDate: e.target.value })} /></label>
       </div>
       <label>欲しい理由<textarea value={themeDraft.reason} onChange={(e) => setThemeDraft({ ...themeDraft, reason: e.target.value })} placeholder="なぜ欲しいのか。あとで冷静に見返す用" /></label>
       <label>メモ<textarea value={themeDraft.memo} onChange={(e) => setThemeDraft({ ...themeDraft, memo: e.target.value })} /></label>
       <div className="actions">
         <button className="primary" type="submit">保存する</button>
         <button type="button" onClick={() => setEditingThemeId("")}>キャンセル</button>
+        {theme.status === "未購入"
+          ? <button type="button" className="danger-link" onClick={() => stopTheme(theme)}>やめたにする</button>
+          : theme.status === "やめた" && <button type="button" onClick={() => restoreTheme(theme)}><RotateCcw size={15} />ほしいものに戻す</button>}
         <button type="button" className="danger-link" onClick={() => deleteTheme(theme)}><Trash2 size={15} />削除</button>
       </div>
     </form>
@@ -725,7 +774,7 @@ function App() {
       <div className="card-head">
         <div>
           <h3>{theme.title}</h3>
-          <p>{theme.status} ／ {theme.category} ／ 登録：{fmtDate(theme.createdAt)}</p>
+          <p>{[theme.category, releaseDateLabel(theme.releaseDate), `登録：${fmtDate(theme.createdAt)}`].filter(Boolean).join(" ／ ")}</p>
         </div>
       </div>
       {editingThemeId === theme.id ? renderThemeEditForm(theme) : (
@@ -733,7 +782,12 @@ function App() {
           {theme.reason && <p className="reason">{theme.reason}</p>}
           {theme.memo && <p className="muted">{theme.memo}</p>}
           {theme.candidates.length > 0 && <div className="candidate-list">{theme.candidates.map((c) => renderCandidateRow(theme, c))}</div>}
-          {candidateFormThemeId === theme.id ? renderCandidateForm(theme) : purchaseThemeId === theme.id ? renderPurchaseForm(theme) : (
+          {candidateFormThemeId === theme.id ? renderCandidateForm(theme) : purchaseThemeId === theme.id ? renderPurchaseForm(theme) : theme.status === "やめた" ? (
+            <div className="actions">
+              <button onClick={() => restoreTheme(theme)}><RotateCcw size={16} />ほしいものに戻す</button>
+              <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
+            </div>
+          ) : (
             <div className="actions">
               <button onClick={() => openCandidateForm(theme.id)}><Camera size={16} />候補を追加</button>
               <button onClick={() => startPurchase(theme)}><CheckCircle2 size={16} />買った</button>
@@ -751,22 +805,23 @@ function App() {
         <input value={quickTheme} onChange={(e) => setQuickTheme(e.target.value)} placeholder="欲しいものを名前だけで追加" aria-label="テーマ名" />
         <button className="primary" type="submit" disabled={!quickTheme.trim()}><Plus size={18} /></button>
       </form>
-      <div className="filters">
-        <label className="search-box"><Search size={16} /><input value={searchFilters.keyword} onChange={(e) => setSearchFilters({ ...searchFilters, keyword: e.target.value })} placeholder="検索" /></label>
-        <select value={searchFilters.status} onChange={(e) => setSearchFilters({ ...searchFilters, status: e.target.value })}>
-          <option>すべて</option>
-          {searchGroups.map((v) => <option key={v}>{v}</option>)}
-        </select>
+      <div className="search-only">
+        <label className="search-box"><Search size={16} /><input value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} placeholder="検索" /></label>
       </div>
-      {searchGroups.map((status) => {
-        const items = searchThemes.filter((t) => t.status === status);
-        const open = openGroups[status] ?? false;
+      {activeSearchThemes.length === 0 && <p className="empty">ほしいものはまだありません。</p>}
+      {([
+        ["発売予定", scheduledThemes],
+        ["候補あり", candidateThemes],
+        ["テーマだけ", themeOnlyThemes],
+        ["やめた", stoppedThemes],
+      ] as const).filter(([, items]) => items.length > 0).map(([groupName, items]) => {
+        const open = openGroups[groupName] ?? false;
         return (
-          <section className="group" key={status}>
-            <button className="group-toggle" onClick={() => setOpenGroups({ ...openGroups, [status]: !open })}>
-              {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}<span>{status}</span><b>{items.length}</b>
+          <section className="group" key={groupName}>
+            <button className="group-toggle" onClick={() => setOpenGroups({ ...openGroups, [groupName]: !open })}>
+              {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}<span>{groupName}</span><b>{items.length}</b>
             </button>
-            {open && <div className="card-list">{items.map(renderThemeCard)}{items.length === 0 && <p className="empty">なし</p>}</div>}
+            {open && <div className="card-list">{items.map(renderThemeCard)}</div>}
           </section>
         );
       })}
@@ -906,7 +961,7 @@ function App() {
           </div>
         )}
         {importMessage && <p className="success">{importMessage}</p>}
-        <p className="note">既存データは消さず、新しいテーマ・候補・補充だけ追加します。初期版（v1）のバックアップも読み込めます。</p>
+        <p className="note">既存データは消さず、新しいテーマ・候補・補充だけ追加します。v1・v2・v3のバックアップを読み込めます。</p>
       </section>
       <section className="panel">
         <div className="panel-title"><Settings size={18} />保存場所と注意</div>
@@ -922,7 +977,7 @@ function App() {
   );
 
   const nav = [
-    { id: "search" as ActiveView, label: "探し中", icon: ShoppingBag },
+    { id: "search" as ActiveView, label: "ほしいもの", icon: ShoppingBag },
     { id: "refill" as ActiveView, label: "補充", icon: RotateCcw },
     { id: "bought" as ActiveView, label: "買った", icon: CheckCircle2 },
     { id: "settings" as ActiveView, label: "設定", icon: Settings },
