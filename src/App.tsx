@@ -449,6 +449,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" aria-hidden="true" />
         <div className="modal-head">
           <b>{title}</b>
           <button type="button" className="modal-close" onClick={onClose} aria-label="閉じる"><X size={18} /></button>
@@ -949,14 +950,14 @@ function App() {
       {theme.candidates.length > 0 && <div className="candidate-list">{theme.candidates.map((c) => renderCandidateRow(theme, c))}</div>}
       {theme.status === "やめた" ? (
         <div className="actions">
-          <button onClick={() => restoreTheme(theme)}><RotateCcw size={16} />ほしいものに戻す</button>
-          <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
+          <button className="quiet" onClick={() => restoreTheme(theme)}><RotateCcw size={16} />ほしいものに戻す</button>
+          <button className="quiet sub" onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
         </div>
       ) : (
         <div className="actions">
-          <button onClick={() => openCandidateForm(theme.id)}><Camera size={16} />候補を追加</button>
-          <button onClick={() => startPurchase(theme)}><CheckCircle2 size={16} />買った</button>
-          <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
+          <button className="quiet" onClick={() => openCandidateForm(theme.id)}><Camera size={16} />候補を追加</button>
+          <button className="quiet" onClick={() => startPurchase(theme)}><CheckCircle2 size={16} />買った</button>
+          <button className="quiet sub" onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
         </div>
       )}
     </article>
@@ -1055,8 +1056,8 @@ function App() {
           </div>
         </div>
         <div className="actions">
-          <button onClick={() => startPurchase(theme)}><Pencil size={15} />{theme.satisfaction ? "記録を編集" : "満足度を追記"}</button>
-          <button onClick={() => deleteTheme(theme)} aria-label="削除"><Trash2 size={15} /></button>
+          <button className="quiet" onClick={() => startPurchase(theme)}><Pencil size={15} />{theme.satisfaction ? "記録を編集" : "満足度を追記"}</button>
+          <button className="quiet sub" onClick={() => deleteTheme(theme)} aria-label="削除"><Trash2 size={15} /></button>
         </div>
       </article>
     );

@@ -6,8 +6,8 @@
   "scope": ".",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fbf3da",
-  "theme_color": "#fbf3da",
+  "background_color": "#f7edd0",
+  "theme_color": "#f7edd0",
   "icons": [
     {
       "src": "icons/wishlist-icon-192.png",
