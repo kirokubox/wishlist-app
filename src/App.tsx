@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { Camera, CheckCircle2, ChevronDown, ChevronRight, Download, Pencil, Plus, RotateCcw, Search, Settings, ShoppingBag, Trash2, X } from "lucide-react";
-import { compressImage, deletePhoto, getPhoto, putPhoto } from "./photoStore";
+import { compressImage, deletePhoto, getPhoto, photoErrorMessage, putPhoto } from "./photoStore";
 import "./styles.css";
 
 // ---------- 型 ----------
@@ -10,12 +10,16 @@ type ThemeStatus = "未購入" | "買った" | "やめた";
 type Satisfaction = 1 | 2 | 3 | 4 | 5;
 type ActiveView = "search" | "refill" | "bought" | "settings";
 
+// 候補写真は「値札・全体・試着」のラベル付き3スロット（各1枚・どれか1枚以上必須）
+type PhotoSlot = "tag" | "overall" | "fitting";
+type CandidatePhotos = Record<PhotoSlot, string | null>;
+
 type WishlistCandidate = {
   id: string;
   shop: string;
   price: number | null;
   memo: string;
-  photoId: string | null;
+  photos: CandidatePhotos;
   createdAt: string;
   updatedAt: string;
 };
@@ -55,11 +59,19 @@ type WishlistData = { themes: WishlistTheme[]; refillItems: RefillItem[] };
 
 const DATA_KEY = "yuki-wishlist-data";
 const VIEW_KEY = "yuki-wishlist-active-view";
-const PRE_V3_BACKUP_PREFIX = "yuki-wishlist-data-backup-pre-v3-";
+const PRE_V4_BACKUP_PREFIX = "yuki-wishlist-data-backup-pre-v4-";
 const categories: Category[] = ["服", "家電", "ガジェット", "日用品", "家具・インテリア", "趣味", "美容・身だしなみ", "その他"];
 const sats: Satisfaction[] = [5, 4, 3, 2, 1];
 const satLabels: Record<Satisfaction, string> = { 5: "かなり満足", 4: "よかった", 3: "普通", 2: "微妙", 1: "後悔" };
 const DEFAULT_INTERVAL_MONTHS = 3;
+const photoSlots: { key: PhotoSlot; label: string }[] = [
+  { key: "tag", label: "値札" },
+  { key: "overall", label: "全体" },
+  { key: "fitting", label: "試着" },
+];
+const emptyPhotos = (): CandidatePhotos => ({ tag: null, overall: null, fitting: null });
+const photoIdList = (photos: CandidatePhotos) => photoSlots.map((s) => photos[s.key]).filter(Boolean) as string[];
+const mainPhotoId = (photos: CandidatePhotos) => photos.overall ?? photos.tag ?? photos.fitting;
 
 const now = () => new Date().toISOString();
 const today = () => {
@@ -94,7 +106,17 @@ const isRefillVisible = (item: RefillItem) => {
   return today() >= nextShowDate(item);
 };
 
-// ---------- 読み込み・v1変換 ----------
+// ---------- 読み込み・旧版変換 ----------
+
+// v4で photoId（1枚）→ photos（3スロット）へ変更。旧データの写真は「全体」スロットへ移す。
+const normalizeCandidatePhotos = (item: Record<string, unknown>): CandidatePhotos => {
+  const raw = item.photos;
+  if (raw && typeof raw === "object") {
+    const p = raw as Record<string, unknown>;
+    return { tag: str(p.tag) || null, overall: str(p.overall) || null, fitting: str(p.fitting) || null };
+  }
+  return { tag: null, overall: str(item.photoId) || null, fitting: null };
+};
 
 const normalizeCandidate = (value: unknown): WishlistCandidate | null => {
   if (!value || typeof value !== "object") return null;
@@ -104,7 +126,7 @@ const normalizeCandidate = (value: unknown): WishlistCandidate | null => {
     shop: str(item.shop),
     price: numOrNull(item.price),
     memo: str(item.memo),
-    photoId: str(item.photoId) || null,
+    photos: normalizeCandidatePhotos(item),
     createdAt: str(item.createdAt) || now(),
     updatedAt: str(item.updatedAt) || now(),
   };
@@ -183,7 +205,7 @@ const convertV1 = (rawThemes: unknown[]): WishlistData => {
         shop,
         price: numOrNull(cand.price),
         memo: str(cand.memo),
-        photoId: null,
+        photos: emptyPhotos(),
         createdAt: str(cand.createdAt) || now(),
         updatedAt: str(cand.updatedAt) || now(),
       } satisfies WishlistCandidate;
@@ -209,13 +231,13 @@ const convertV1 = (rawThemes: unknown[]): WishlistData => {
   return { themes, refillItems };
 };
 
-// localStorage・バックアップJSONの両方をここで受ける（v1配列 / v1バックアップ / v2 / v3）
+// localStorage・バックアップJSONの両方をここで受ける（v1配列 / v1バックアップ / v2〜v4）
 const parseStoredData = (parsed: unknown): WishlistData | null => {
   if (Array.isArray(parsed)) return convertV1(parsed);
   if (!parsed || typeof parsed !== "object") return null;
   const root = parsed as Record<string, unknown>;
   if (!Array.isArray(root.themes)) return null;
-  if (root.version === 2 || root.version === 3 || Array.isArray(root.refillItems)) {
+  if (root.version === 2 || root.version === 3 || root.version === 4 || Array.isArray(root.refillItems)) {
     return {
       themes: (root.themes as unknown[]).map(normalizeTheme).filter(Boolean) as WishlistTheme[],
       refillItems: (Array.isArray(root.refillItems) ? root.refillItems : []).map(normalizeRefill).filter(Boolean) as RefillItem[],
@@ -229,9 +251,10 @@ const loadData = (): WishlistData => {
     const raw = localStorage.getItem(DATA_KEY);
     if (!raw) return { themes: [], refillItems: [] };
     const parsed = JSON.parse(raw);
-    const isVersion3 = !Array.isArray(parsed) && parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).version === 3;
-    if (!isVersion3) {
-      const backupKey = `${PRE_V3_BACKUP_PREFIX}${today().replaceAll("-", "")}`;
+    const isVersion4 = !Array.isArray(parsed) && parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).version === 4;
+    if (!isVersion4) {
+      // 旧形式を変換して上書きする前に、生の文字列を一度だけ退避しておく（v3移行時と同じ保全）
+      const backupKey = `${PRE_V4_BACKUP_PREFIX}${today().replaceAll("-", "")}`;
       if (!localStorage.getItem(backupKey)) {
         try {
           localStorage.setItem(backupKey, raw);
@@ -297,7 +320,7 @@ const buildImportPreview = (text: string, existing: WishlistData): ImportPreview
     if (dup) duplicateRefillCount += 1;
     return !dup;
   });
-  const importedWithPhoto = [...newThemes.flatMap((t) => t.candidates), ...candidateAdds.flatMap((g) => g.candidates)].filter((c) => c.photoId).length;
+  const importedWithPhoto = [...newThemes.flatMap((t) => t.candidates), ...candidateAdds.flatMap((g) => g.candidates)].filter((c) => photoIdList(c.photos).length > 0).length;
   if (importedWithPhoto > 0) warnings.push(`写真はバックアップに含まれないため、取り込む候補 ${importedWithPhoto} 件の写真はこの端末では表示されません`);
   return { valid: true, errors: [], warnings, newThemes, candidateAdds, newRefills, duplicateThemeCount, duplicateCandidateCount, duplicateRefillCount };
 };
@@ -315,7 +338,11 @@ const createMarkdown = ({ themes, refillItems }: WishlistData) => {
   const stopped = themes.filter((t) => t.status === "やめた");
   const visibleRefills = refillItems.filter(isRefillVisible);
   const waitingRefills = refillItems.filter((item) => !isRefillVisible(item));
-  const candidateBlock = (c: WishlistCandidate) => `- 店名：${md(c.shop)} ／ 金額：${fmtPrice(c.price)} ／ 写真：${c.photoId ? "あり" : "なし"} ／ 登録日：${fmtDate(c.createdAt)}${c.memo ? ` ／ メモ：${md(c.memo)}` : ""}`;
+  const photoLabel = (c: WishlistCandidate) => {
+    const labels = photoSlots.filter((s) => c.photos[s.key]).map((s) => s.label);
+    return labels.length ? labels.join("・") : "なし";
+  };
+  const candidateBlock = (c: WishlistCandidate) => `- 店名：${md(c.shop)} ／ 金額：${fmtPrice(c.price)} ／ 写真：${photoLabel(c)} ／ 登録日：${fmtDate(c.createdAt)}${c.memo ? ` ／ メモ：${md(c.memo)}` : ""}`;
   const themeBlock = (t: WishlistTheme) => `### ${md(t.title)}\n\n- カテゴリ：${t.category}${t.releaseDate ? `\n- 発売日：${t.releaseDate}` : ""}\n- 欲しい理由：${md(t.reason)}\n- メモ：${md(t.memo)}\n- 登録日：${fmtDate(t.createdAt)}${t.candidates.length ? `\n\n候補：\n\n${t.candidates.map(candidateBlock).join("\n")}` : ""}`;
   const boughtBlock = (t: WishlistTheme) => {
     const candidate = t.candidates.find((c) => c.id === t.purchasedCandidateId);
@@ -366,11 +393,14 @@ ${waitingRefills.map(refillLine).join("\n") || "該当なし"}
 
 const photoUrlCache = new Map<string, string>();
 
+// 「写真なし」（IDなし）と「読込失敗」（IDはあるがBlobを取り出せない）を区別して表示する。
+// 読込失敗はタップで再試行できる。区別することで、保存不具合が起きたときに気づきやすくする。
 function PhotoThumb({ photoId, className, onClick }: { photoId: string | null; className: string; onClick?: () => void }) {
   const [url, setUrl] = useState<string | null>(photoId ? photoUrlCache.get(photoId) ?? null : null);
-  const [missing, setMissing] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    setMissing(false);
+    setFailed(false);
     if (!photoId) {
       setUrl(null);
       return;
@@ -386,7 +416,7 @@ function PhotoThumb({ photoId, className, onClick }: { photoId: string | null; c
       .then((blob) => {
         if (cancelled) return;
         if (!blob) {
-          setMissing(true);
+          setFailed(true);
           return;
         }
         const objectUrl = URL.createObjectURL(blob);
@@ -394,21 +424,51 @@ function PhotoThumb({ photoId, className, onClick }: { photoId: string | null; c
         setUrl(objectUrl);
       })
       .catch(() => {
-        if (!cancelled) setMissing(true);
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [photoId]);
-  if (!photoId || missing) return <div className={`photo-placeholder ${className}`}>写真なし</div>;
+  }, [photoId, attempt]);
+  if (!photoId) return <div className={`photo-placeholder ${className}`}>写真なし</div>;
+  if (failed) return <div className={`photo-placeholder photo-failed ${className}`} onClick={() => setAttempt((a) => a + 1)} role="button">読込失敗<br />再試行</div>;
   if (!url) return <div className={`photo-placeholder ${className}`}>…</div>;
   return <img src={url} alt="" className={className} onClick={onClick} loading="lazy" />;
+}
+
+// ---------- モーダル ----------
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <b>{title}</b>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="閉じる"><X size={18} /></button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
+    </div>
+  );
 }
 
 // ---------- 本体 ----------
 
 const emptyThemeDraft = { title: "", category: "その他" as Category, releaseDate: "", reason: "", memo: "" };
-const emptyCandidateDraft = { shop: "", price: "", memo: "", file: null as File | null, previewUrl: null as string | null };
+const emptyCandidateDraft = { shop: "", price: "", memo: "" };
+type SlotDraft = { blob: Blob | null; previewUrl: string | null; removed: boolean };
+const emptySlotDrafts = (): Record<PhotoSlot, SlotDraft> => ({
+  tag: { blob: null, previewUrl: null, removed: false },
+  overall: { blob: null, previewUrl: null, removed: false },
+  fitting: { blob: null, previewUrl: null, removed: false },
+});
 const emptyPurchaseDraft = () => ({ candidateId: "", date: today(), price: "", satisfaction: "", note: "" });
 
 function App() {
@@ -427,18 +487,20 @@ function App() {
   const [candidateFormThemeId, setCandidateFormThemeId] = useState("");
   const [editingCandidateId, setEditingCandidateId] = useState("");
   const [candidateDraft, setCandidateDraft] = useState(emptyCandidateDraft);
+  const [slotDrafts, setSlotDrafts] = useState<Record<PhotoSlot, SlotDraft>>(emptySlotDrafts());
+  const [slotBusyCount, setSlotBusyCount] = useState(0); // 圧縮処理中のスロット数。処理中は保存を押せないようにする
   const [candidateSaving, setCandidateSaving] = useState(false);
   const [purchaseThemeId, setPurchaseThemeId] = useState("");
   const [purchaseDraft, setPurchaseDraft] = useState(emptyPurchaseDraft());
   const [editingRefillId, setEditingRefillId] = useState("");
   const [refillDraft, setRefillDraft] = useState({ name: "", intervalMonths: String(DEFAULT_INTERVAL_MONTHS) });
   const [waitingOpen, setWaitingOpen] = useState(false);
-  const [overlayPhotoId, setOverlayPhotoId] = useState<string | null>(null);
+  const [overlayPhoto, setOverlayPhoto] = useState<{ photoId: string; label: string } | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importMessage, setImportMessage] = useState("");
 
   useEffect(() => {
-    localStorage.setItem(DATA_KEY, JSON.stringify({ version: 3, themes, refillItems }));
+    localStorage.setItem(DATA_KEY, JSON.stringify({ version: 4, themes, refillItems }));
   }, [themes, refillItems]);
   useEffect(() => localStorage.setItem(VIEW_KEY, activeView), [activeView]);
 
@@ -470,7 +532,7 @@ function App() {
   const startEditTheme = (theme: WishlistTheme) => {
     setEditingThemeId(theme.id);
     setThemeDraft({ title: theme.title, category: theme.category, releaseDate: theme.releaseDate, reason: theme.reason, memo: theme.memo });
-    setCandidateFormThemeId("");
+    closeCandidateForm();
     setPurchaseThemeId("");
   };
 
@@ -495,33 +557,71 @@ function App() {
   const deleteTheme = (theme: WishlistTheme) => {
     if (!confirm(`「${theme.title}」を削除しますか？候補と写真も一緒に削除されます。`)) return;
     theme.candidates.forEach((c) => {
-      if (c.photoId) deletePhoto(c.photoId).catch(() => {});
+      photoIdList(c.photos).forEach((photoId) => deletePhoto(photoId).catch(() => {}));
     });
     updateThemes((all) => all.filter((t) => t.id !== theme.id));
+    setEditingThemeId("");
+    setPurchaseThemeId("");
   };
 
-  // ----- 候補（写真＋店名が必須。金額・メモは任意） -----
+  // ----- 候補（写真どれか1枚＋店名が必須。金額・メモは任意） -----
+
+  // モーダルを閉じた・開き直した後に、前のフォームで選んだ写真の圧縮完了が遅れて届いても混入しないよう、
+  // フォームの世代番号で古い処理結果を捨てる。
+  const slotSessionRef = useRef(0);
+
+  const resetSlotDrafts = () => {
+    slotSessionRef.current += 1;
+    setSlotDrafts((prev) => {
+      photoSlots.forEach(({ key }) => {
+        if (prev[key].previewUrl) URL.revokeObjectURL(prev[key].previewUrl!);
+      });
+      return emptySlotDrafts();
+    });
+  };
 
   const openCandidateForm = (themeId: string, candidate?: WishlistCandidate) => {
     setCandidateFormThemeId(themeId);
     setEditingCandidateId(candidate?.id ?? "");
-    if (candidateDraft.previewUrl) URL.revokeObjectURL(candidateDraft.previewUrl);
-    setCandidateDraft(candidate ? { shop: candidate.shop, price: candidate.price === null ? "" : String(candidate.price), memo: candidate.memo, file: null, previewUrl: null } : emptyCandidateDraft);
+    resetSlotDrafts();
+    setCandidateDraft(candidate ? { shop: candidate.shop, price: candidate.price === null ? "" : String(candidate.price), memo: candidate.memo } : emptyCandidateDraft);
     setEditingThemeId("");
     setPurchaseThemeId("");
   };
 
   const closeCandidateForm = () => {
-    if (candidateDraft.previewUrl) URL.revokeObjectURL(candidateDraft.previewUrl);
+    resetSlotDrafts();
     setCandidateFormThemeId("");
     setEditingCandidateId("");
     setCandidateDraft(emptyCandidateDraft);
   };
 
-  const selectCandidateFile = (file: File | undefined) => {
+  // 選択した瞬間に読み込み・圧縮してメモリ内Blobにする。
+  // Androidの選択ファイル（content URI）は時間が経つと読めなくなることがあり、
+  // 保存ボタンを押した時点で読むと静かに失敗するため、選択時に読み切ってしまう。
+  const selectSlotFile = async (slot: PhotoSlot, file: File | undefined) => {
     if (!file) return;
-    if (candidateDraft.previewUrl) URL.revokeObjectURL(candidateDraft.previewUrl);
-    setCandidateDraft((d) => ({ ...d, file, previewUrl: URL.createObjectURL(file) }));
+    const session = slotSessionRef.current;
+    setSlotBusyCount((n) => n + 1);
+    try {
+      const blob = await compressImage(file);
+      if (session !== slotSessionRef.current) return; // フォームが閉じられた・開き直された後の遅延結果は捨てる
+      setSlotDrafts((prev) => {
+        if (prev[slot].previewUrl) URL.revokeObjectURL(prev[slot].previewUrl!);
+        return { ...prev, [slot]: { blob, previewUrl: URL.createObjectURL(blob), removed: false } };
+      });
+    } catch (error) {
+      if (session === slotSessionRef.current) alert(`${photoSlots.find((s) => s.key === slot)?.label}の写真を読み込めませんでした。選び直してください。\n${photoErrorMessage(error)}`);
+    } finally {
+      setSlotBusyCount((n) => n - 1);
+    }
+  };
+
+  const removeSlot = (slot: PhotoSlot) => {
+    setSlotDrafts((prev) => {
+      if (prev[slot].previewUrl) URL.revokeObjectURL(prev[slot].previewUrl!);
+      return { ...prev, [slot]: { blob: null, previewUrl: null, removed: true } };
+    });
   };
 
   const submitCandidate = async (theme: WishlistTheme, e: FormEvent) => {
@@ -529,31 +629,48 @@ function App() {
     const shop = candidateDraft.shop.trim();
     if (!shop) return;
     const editing = editingCandidateId ? theme.candidates.find((c) => c.id === editingCandidateId) : undefined;
-    if (!editing && !candidateDraft.file) {
-      alert("写真を選んでください（候補は写真が必須です）");
+    // 「既存スロットのID＋新しく選んだ写真」の合計でどれか1枚以上を求める。
+    // Blobが壊れていてもIDがあれば有効扱い（壊れた候補も編集・差し替えで修復できるように）。
+    const willHavePhoto = photoSlots.some(({ key }) => {
+      const draft = slotDrafts[key];
+      if (draft.blob) return true;
+      if (draft.removed) return false;
+      return Boolean(editing?.photos[key]);
+    });
+    if (!willHavePhoto) {
+      alert("写真をどれか1枚選んでください（値札・全体・試着のどの枠でもOKです）");
       return;
     }
     setCandidateSaving(true);
     try {
-      let photoId = editing?.photoId ?? null;
-      if (candidateDraft.file) {
-        const blob = await compressImage(candidateDraft.file);
-        const newPhotoId = makeId();
-        await putPhoto(newPhotoId, blob);
-        if (photoId) deletePhoto(photoId).catch(() => {});
-        photoId = newPhotoId;
+      const newPhotos = emptyPhotos();
+      const obsoletePhotoIds: string[] = [];
+      for (const { key } of photoSlots) {
+        const draft = slotDrafts[key];
+        const existingId = editing?.photos[key] ?? null;
+        if (draft.blob) {
+          const photoId = makeId();
+          await putPhoto(photoId, draft.blob);
+          newPhotos[key] = photoId;
+          if (existingId) obsoletePhotoIds.push(existingId);
+        } else if (draft.removed) {
+          if (existingId) obsoletePhotoIds.push(existingId);
+        } else {
+          newPhotos[key] = existingId;
+        }
       }
       const price = candidateDraft.price.trim() === "" ? null : Number(candidateDraft.price);
-      const fields = { shop, price: Number.isFinite(price as number) ? price : null, memo: candidateDraft.memo, photoId };
+      const fields = { shop, price: Number.isFinite(price as number) ? price : null, memo: candidateDraft.memo, photos: newPhotos };
       updateTheme(theme.id, (t) => ({
         ...t,
         candidates: editing
           ? t.candidates.map((c) => (c.id === editing.id ? { ...c, ...fields, updatedAt: now() } : c))
           : [...t.candidates, { id: makeId(), ...fields, createdAt: now(), updatedAt: now() }],
       }));
+      obsoletePhotoIds.forEach((photoId) => deletePhoto(photoId).catch(() => {}));
       closeCandidateForm();
-    } catch {
-      alert("写真の保存に失敗しました。もう一度お試しください。");
+    } catch (error) {
+      alert(`写真の保存に失敗しました。もう一度お試しください。\n${photoErrorMessage(error)}`);
     } finally {
       setCandidateSaving(false);
     }
@@ -561,7 +678,7 @@ function App() {
 
   const deleteCandidate = (theme: WishlistTheme, candidate: WishlistCandidate) => {
     if (!confirm("この候補を削除しますか？写真も削除されます。")) return;
-    if (candidate.photoId) deletePhoto(candidate.photoId).catch(() => {});
+    photoIdList(candidate.photos).forEach((photoId) => deletePhoto(photoId).catch(() => {}));
     updateTheme(theme.id, (t) => ({ ...t, candidates: t.candidates.filter((c) => c.id !== candidate.id) }));
   };
 
@@ -573,7 +690,7 @@ function App() {
       ? { candidateId: theme.purchasedCandidateId, date: theme.purchasedDate || today(), price: theme.purchasedPrice === null ? "" : String(theme.purchasedPrice), satisfaction: theme.satisfaction ? String(theme.satisfaction) : "", note: theme.purchaseNote }
       : { ...emptyPurchaseDraft(), candidateId: theme.candidates[0]?.id ?? "" });
     setEditingThemeId("");
-    setCandidateFormThemeId("");
+    closeCandidateForm();
   };
 
   const submitPurchase = (theme: WishlistTheme, e: FormEvent) => {
@@ -628,6 +745,7 @@ function App() {
   const deleteRefill = (item: RefillItem) => {
     if (!confirm(`「${item.name}」を補充リストから削除しますか？購入履歴も消えます。`)) return;
     updateRefills((all) => all.filter((r) => r.id !== item.id));
+    setEditingRefillId("");
   };
 
   // ----- 入出力 -----
@@ -641,7 +759,7 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 3, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
+  const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 4, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
   const exportMarkdown = () => downloadText(`wishlist-export-${today()}.md`, createMarkdown({ themes, refillItems }), "text/markdown");
   const readImportFile = async (file?: File) => {
     setImportMessage("");
@@ -681,10 +799,15 @@ function App() {
   const visibleRefills = refillItems.filter(isRefillVisible);
   const waitingRefills = refillItems.filter((item) => !isRefillVisible(item)).sort((a, b) => nextShowDate(a).localeCompare(nextShowDate(b)));
 
-  // ----- 各パーツ -----
+  const editingTheme = editingThemeId ? themes.find((t) => t.id === editingThemeId) : undefined;
+  const candidateFormTheme = candidateFormThemeId ? themes.find((t) => t.id === candidateFormThemeId) : undefined;
+  const purchaseTheme = purchaseThemeId ? themes.find((t) => t.id === purchaseThemeId) : undefined;
+  const editingRefill = editingRefillId ? refillItems.find((r) => r.id === editingRefillId) : undefined;
+
+  // ----- モーダル内フォーム -----
 
   const renderThemeEditForm = (theme: WishlistTheme) => (
-    <form className="inline-form" onSubmit={submitThemeEdit}>
+    <form className="modal-form" onSubmit={submitThemeEdit}>
       <label>テーマ名<input value={themeDraft.title} onChange={(e) => setThemeDraft({ ...themeDraft, title: e.target.value })} required /></label>
       <div className="grid-2">
         <label>カテゴリ<select value={themeDraft.category} onChange={(e) => setThemeDraft({ ...themeDraft, category: e.target.value as Category })}>{categories.map((v) => <option key={v}>{v}</option>)}</select></label>
@@ -695,6 +818,8 @@ function App() {
       <div className="actions">
         <button className="primary" type="submit">保存する</button>
         <button type="button" onClick={() => setEditingThemeId("")}>キャンセル</button>
+      </div>
+      <div className="actions">
         {theme.status === "未購入"
           ? <button type="button" className="danger-link" onClick={() => stopTheme(theme)}>やめたにする</button>
           : theme.status === "やめた" && <button type="button" onClick={() => restoreTheme(theme)}><RotateCcw size={15} />ほしいものに戻す</button>}
@@ -706,23 +831,38 @@ function App() {
   const renderCandidateForm = (theme: WishlistTheme) => {
     const editing = editingCandidateId ? theme.candidates.find((c) => c.id === editingCandidateId) : undefined;
     return (
-      <form className="inline-form" onSubmit={(e) => submitCandidate(theme, e)}>
-        <label className="photo-picker">
-          写真{editing ? "（変えるときだけ選ぶ）" : "（必須）"}
-          <input type="file" accept="image/*" onChange={(e) => selectCandidateFile(e.target.files?.[0])} />
-          {candidateDraft.previewUrl
-            ? <img src={candidateDraft.previewUrl} alt="" className="photo-preview" />
-            : editing?.photoId
-              ? <PhotoThumb photoId={editing.photoId} className="photo-preview" />
-              : <span className="photo-picker-hint"><Camera size={18} />タップして撮影・選択</span>}
-        </label>
+      <form className="modal-form" onSubmit={(e) => submitCandidate(theme, e)}>
+        <div>
+          <span className="field-title">写真（どれか1枚は必須）</span>
+          <div className="slot-row">
+            {photoSlots.map(({ key, label }) => {
+              const draft = slotDrafts[key];
+              const existingId = editing && !draft.removed ? editing.photos[key] : null;
+              const hasPhoto = Boolean(draft.previewUrl || existingId);
+              return (
+                <div className="slot" key={key}>
+                  <span className="slot-label">{label}</span>
+                  <label className="slot-box">
+                    <input type="file" accept="image/*" onChange={(e) => { selectSlotFile(key, e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                    {draft.previewUrl
+                      ? <img src={draft.previewUrl} alt="" className="slot-img" />
+                      : existingId
+                        ? <PhotoThumb photoId={existingId} className="slot-img" />
+                        : <span className="slot-hint"><Camera size={16} />追加</span>}
+                  </label>
+                  {hasPhoto && <button type="button" className="slot-remove" onClick={() => removeSlot(key)} aria-label={`${label}の写真を外す`}><X size={12} /></button>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
         <label>店名・サイト名（必須）<input value={candidateDraft.shop} onChange={(e) => setCandidateDraft({ ...candidateDraft, shop: e.target.value })} required placeholder="例：ユニクロ 〇〇店" /></label>
         <div className="grid-2">
           <label>金額（任意）<input type="number" inputMode="numeric" value={candidateDraft.price} onChange={(e) => setCandidateDraft({ ...candidateDraft, price: e.target.value })} /></label>
           <label>メモ（任意）<input value={candidateDraft.memo} onChange={(e) => setCandidateDraft({ ...candidateDraft, memo: e.target.value })} /></label>
         </div>
         <div className="actions">
-          <button className="primary" type="submit" disabled={candidateSaving}>{candidateSaving ? "保存中…" : editing ? "候補を保存" : "候補を追加"}</button>
+          <button className="primary" type="submit" disabled={candidateSaving || slotBusyCount > 0}>{candidateSaving ? "保存中…" : slotBusyCount > 0 ? "写真を処理中…" : editing ? "候補を保存" : "候補を追加"}</button>
           <button type="button" onClick={closeCandidateForm}>キャンセル</button>
         </div>
       </form>
@@ -730,7 +870,7 @@ function App() {
   };
 
   const renderPurchaseForm = (theme: WishlistTheme) => (
-    <form className="inline-form" onSubmit={(e) => submitPurchase(theme, e)}>
+    <form className="modal-form" onSubmit={(e) => submitPurchase(theme, e)}>
       {theme.candidates.length > 0 && (
         <label>買った候補<select value={purchaseDraft.candidateId} onChange={(e) => setPurchaseDraft({ ...purchaseDraft, candidateId: e.target.value })}>
           <option value="">テーマそのもの（候補以外）</option>
@@ -754,20 +894,47 @@ function App() {
     </form>
   );
 
-  const renderCandidateRow = (theme: WishlistTheme, candidate: WishlistCandidate) => (
-    <div className="candidate" key={candidate.id}>
-      <PhotoThumb photoId={candidate.photoId} className="thumb" onClick={() => candidate.photoId && setOverlayPhotoId(candidate.photoId)} />
-      <div className="candidate-body">
-        <b>{candidate.shop}</b>
-        <p>{[fmtPrice(candidate.price), `登録：${fmtDate(candidate.createdAt)}`].filter(Boolean).join(" ／ ")}</p>
-        {candidate.memo && <p className="muted">{candidate.memo}</p>}
+  const renderRefillEditForm = (item: RefillItem) => (
+    <form className="modal-form" onSubmit={submitRefillEdit}>
+      <label>品名<input value={refillDraft.name} onChange={(e) => setRefillDraft({ ...refillDraft, name: e.target.value })} required /></label>
+      <label>再表示までの月数<input type="number" inputMode="numeric" min={1} max={24} value={refillDraft.intervalMonths} onChange={(e) => setRefillDraft({ ...refillDraft, intervalMonths: e.target.value })} /></label>
+      <div className="actions">
+        <button className="primary" type="submit">保存する</button>
+        <button type="button" onClick={() => setEditingRefillId("")}>キャンセル</button>
+        <button type="button" className="danger-link" onClick={() => deleteRefill(item)}><Trash2 size={15} />削除</button>
       </div>
-      <div className="candidate-actions">
-        <button onClick={() => openCandidateForm(theme.id, candidate)} aria-label="候補を編集"><Pencil size={15} /></button>
-        <button onClick={() => deleteCandidate(theme, candidate)} aria-label="候補を削除"><Trash2 size={15} /></button>
-      </div>
-    </div>
+    </form>
   );
+
+  // ----- カード表示 -----
+
+  const renderCandidateRow = (theme: WishlistTheme, candidate: WishlistCandidate) => {
+    const slotsWithPhoto = photoSlots.filter((s) => candidate.photos[s.key]);
+    return (
+      <div className="candidate" key={candidate.id}>
+        <div className="candidate-main">
+          <div className="thumb-strip">
+            {slotsWithPhoto.length === 0 && <div className="photo-placeholder thumb">写真なし</div>}
+            {slotsWithPhoto.map((s) => (
+              <div className="thumb-wrap" key={s.key}>
+                <PhotoThumb photoId={candidate.photos[s.key]} className="thumb" onClick={() => setOverlayPhoto({ photoId: candidate.photos[s.key]!, label: s.label })} />
+                <span className="thumb-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="candidate-body">
+            <b>{candidate.shop}</b>
+            <p>{[fmtPrice(candidate.price), `登録：${fmtDate(candidate.createdAt)}`].filter(Boolean).join(" ／ ")}</p>
+            {candidate.memo && <p className="muted">{candidate.memo}</p>}
+          </div>
+        </div>
+        <div className="candidate-actions">
+          <button onClick={() => openCandidateForm(theme.id, candidate)} aria-label="候補を編集"><Pencil size={15} /></button>
+          <button onClick={() => deleteCandidate(theme, candidate)} aria-label="候補を削除"><Trash2 size={15} /></button>
+        </div>
+      </div>
+    );
+  };
 
   const renderThemeCard = (theme: WishlistTheme) => (
     <article className="theme-card" key={theme.id}>
@@ -777,24 +944,20 @@ function App() {
           <p>{[theme.category, releaseDateLabel(theme.releaseDate), `登録：${fmtDate(theme.createdAt)}`].filter(Boolean).join(" ／ ")}</p>
         </div>
       </div>
-      {editingThemeId === theme.id ? renderThemeEditForm(theme) : (
-        <>
-          {theme.reason && <p className="reason">{theme.reason}</p>}
-          {theme.memo && <p className="muted">{theme.memo}</p>}
-          {theme.candidates.length > 0 && <div className="candidate-list">{theme.candidates.map((c) => renderCandidateRow(theme, c))}</div>}
-          {candidateFormThemeId === theme.id ? renderCandidateForm(theme) : purchaseThemeId === theme.id ? renderPurchaseForm(theme) : theme.status === "やめた" ? (
-            <div className="actions">
-              <button onClick={() => restoreTheme(theme)}><RotateCcw size={16} />ほしいものに戻す</button>
-              <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
-            </div>
-          ) : (
-            <div className="actions">
-              <button onClick={() => openCandidateForm(theme.id)}><Camera size={16} />候補を追加</button>
-              <button onClick={() => startPurchase(theme)}><CheckCircle2 size={16} />買った</button>
-              <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
-            </div>
-          )}
-        </>
+      {theme.reason && <p className="reason">{theme.reason}</p>}
+      {theme.memo && <p className="muted">{theme.memo}</p>}
+      {theme.candidates.length > 0 && <div className="candidate-list">{theme.candidates.map((c) => renderCandidateRow(theme, c))}</div>}
+      {theme.status === "やめた" ? (
+        <div className="actions">
+          <button onClick={() => restoreTheme(theme)}><RotateCcw size={16} />ほしいものに戻す</button>
+          <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
+        </div>
+      ) : (
+        <div className="actions">
+          <button onClick={() => openCandidateForm(theme.id)}><Camera size={16} />候補を追加</button>
+          <button onClick={() => startPurchase(theme)}><CheckCircle2 size={16} />買った</button>
+          <button onClick={() => startEditTheme(theme)}><Pencil size={16} />編集</button>
+        </div>
       )}
     </article>
   );
@@ -830,28 +993,14 @@ function App() {
 
   const renderRefillRow = (item: RefillItem) => (
     <div className="refill-row" key={item.id}>
-      {editingRefillId === item.id ? (
-        <form className="inline-form refill-edit" onSubmit={submitRefillEdit}>
-          <label>品名<input value={refillDraft.name} onChange={(e) => setRefillDraft({ ...refillDraft, name: e.target.value })} required /></label>
-          <label>再表示までの月数<input type="number" inputMode="numeric" min={1} max={24} value={refillDraft.intervalMonths} onChange={(e) => setRefillDraft({ ...refillDraft, intervalMonths: e.target.value })} /></label>
-          <div className="actions">
-            <button className="primary" type="submit">保存する</button>
-            <button type="button" onClick={() => setEditingRefillId("")}>キャンセル</button>
-            <button type="button" className="danger-link" onClick={() => deleteRefill(item)}><Trash2 size={15} />削除</button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <div className="refill-body">
-            <b>{item.name}</b>
-            <p>{lastPurchase(item) ? `前回：${fmtDate(lastPurchase(item))}` : "まだ買っていない"} ／ {item.intervalMonths}ヶ月ごと</p>
-          </div>
-          <div className="refill-actions">
-            <button className="primary" onClick={() => buyRefill(item)}><CheckCircle2 size={16} />買った</button>
-            <button onClick={() => startEditRefill(item)} aria-label="編集"><Pencil size={15} /></button>
-          </div>
-        </>
-      )}
+      <div className="refill-body">
+        <b>{item.name}</b>
+        <p>{lastPurchase(item) ? `前回：${fmtDate(lastPurchase(item))}` : "まだ買っていない"} ／ {item.intervalMonths}ヶ月ごと</p>
+      </div>
+      <div className="refill-actions">
+        <button className="primary" onClick={() => buyRefill(item)}><CheckCircle2 size={16} />買った</button>
+        <button onClick={() => startEditRefill(item)} aria-label="編集"><Pencil size={15} /></button>
+      </div>
     </div>
   );
 
@@ -892,11 +1041,12 @@ function App() {
   );
 
   const renderBoughtCard = (theme: WishlistTheme) => {
-    const candidate = theme.candidates.find((c) => c.id === theme.purchasedCandidateId) ?? theme.candidates.find((c) => c.photoId);
+    const candidate = theme.candidates.find((c) => c.id === theme.purchasedCandidateId) ?? theme.candidates.find((c) => photoIdList(c.photos).length > 0);
+    const photoId = candidate ? mainPhotoId(candidate.photos) : null;
     return (
       <article className="theme-card bought-card" key={theme.id}>
         <div className="bought-row">
-          <PhotoThumb photoId={candidate?.photoId ?? null} className="thumb" onClick={() => candidate?.photoId && setOverlayPhotoId(candidate.photoId)} />
+          <PhotoThumb photoId={photoId} className="thumb" onClick={() => photoId && setOverlayPhoto({ photoId, label: theme.title })} />
           <div className="bought-body">
             <h3>{theme.title}</h3>
             <p>{[fmtDate(theme.purchasedDate), fmtPrice(theme.purchasedPrice), candidate?.shop].filter(Boolean).join(" ／ ")}</p>
@@ -904,12 +1054,10 @@ function App() {
             {theme.purchaseNote && <p className="muted">{theme.purchaseNote}</p>}
           </div>
         </div>
-        {purchaseThemeId === theme.id ? renderPurchaseForm(theme) : (
-          <div className="actions">
-            <button onClick={() => startPurchase(theme)}><Pencil size={15} />{theme.satisfaction ? "記録を編集" : "満足度を追記"}</button>
-            <button onClick={() => deleteTheme(theme)} aria-label="削除"><Trash2 size={15} /></button>
-          </div>
-        )}
+        <div className="actions">
+          <button onClick={() => startPurchase(theme)}><Pencil size={15} />{theme.satisfaction ? "記録を編集" : "満足度を追記"}</button>
+          <button onClick={() => deleteTheme(theme)} aria-label="削除"><Trash2 size={15} /></button>
+        </div>
       </article>
     );
   };
@@ -961,7 +1109,7 @@ function App() {
           </div>
         )}
         {importMessage && <p className="success">{importMessage}</p>}
-        <p className="note">既存データは消さず、新しいテーマ・候補・補充だけ追加します。v1・v2・v3のバックアップを読み込めます。</p>
+        <p className="note">既存データは消さず、新しいテーマ・候補・補充だけ追加します。v1〜v4のバックアップを読み込めます。</p>
       </section>
       <section className="panel">
         <div className="panel-title"><Settings size={18} />保存場所と注意</div>
@@ -995,15 +1143,20 @@ function App() {
         {activeView === "bought" && renderBoughtView()}
         {activeView === "settings" && renderSettingsView()}
       </main>
-      {overlayPhotoId && (
-        <div className="photo-overlay" onClick={() => setOverlayPhotoId(null)}>
-          <PhotoThumb photoId={overlayPhotoId} className="photo-full" />
+      {editingTheme && <Modal title="テーマを編集" onClose={() => setEditingThemeId("")}>{renderThemeEditForm(editingTheme)}</Modal>}
+      {candidateFormTheme && <Modal title={editingCandidateId ? "候補を編集" : `候補を追加：${candidateFormTheme.title}`} onClose={closeCandidateForm}>{renderCandidateForm(candidateFormTheme)}</Modal>}
+      {purchaseTheme && <Modal title={purchaseTheme.status === "買った" ? "購入記録を編集" : `買った：${purchaseTheme.title}`} onClose={() => setPurchaseThemeId("")}>{renderPurchaseForm(purchaseTheme)}</Modal>}
+      {editingRefill && <Modal title="補充を編集" onClose={() => setEditingRefillId("")}>{renderRefillEditForm(editingRefill)}</Modal>}
+      {overlayPhoto && (
+        <div className="photo-overlay" onClick={() => setOverlayPhoto(null)}>
+          <PhotoThumb photoId={overlayPhoto.photoId} className="photo-full" />
+          <span className="overlay-label">{overlayPhoto.label}</span>
           <button className="overlay-close" aria-label="閉じる"><X size={22} /></button>
         </div>
       )}
       <nav className="bottom-nav">
         {nav.map(({ id, label, icon: Icon }) => (
-          <button key={id} className={activeView === id ? "active" : ""} onClick={() => { setActiveView(id); setEditingThemeId(""); setCandidateFormThemeId(""); setPurchaseThemeId(""); }}>
+          <button key={id} className={activeView === id ? "active" : ""} onClick={() => { setActiveView(id); setEditingThemeId(""); closeCandidateForm(); setPurchaseThemeId(""); setEditingRefillId(""); }}>
             <Icon size={20} /><span>{label}</span>
           </button>
         ))}
