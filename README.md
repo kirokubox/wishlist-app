@@ -45,7 +45,7 @@ npm.cmd run build
 `main` ブランチへpushすると、GitHub Actions（`.github/workflows/deploy.yml`）が自動でビルドしてGitHub Pagesへデプロイします。
 
 - 公開されるのはアプリ本体（HTML / CSS / JavaScript / manifest / アイコン / Service Worker）だけです。登録したデータや写真はGitHubには保存されません
-- `robots.txt` と `noindex` で検索避けをしていますが、絶対的なアクセス制限ではありません。公開URLをSNSやnoteに載せないでください
+- 検索エンジンのインデックスを許可しています（2026-07-29に検索避けを解除）。買いものリストは公開前提のアプリなので、検索で見つかっても構いません。ただし登録データは公開されず、端末内にのみ保存されます
 
 ## PWA（ホーム画面追加）
 
