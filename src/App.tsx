@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { DATA_KEY, DEFAULT_INTERVAL_MONTHS, VIEW_KEY, categories, emptyPhotos, fmtDate, fmtPrice, isRefillVisible, lastPurchase, mainPhotoId, makeId, nextShowDate, now, photoIdList, photoSlots, releaseDateLabel, satLabels, sats, today } from "./helpers";
+import { downloadText } from "./fileUtils";
 import { buildImportPreview } from "./importPreview";
 import type { ImportPreview } from "./importPreview";
 import { createMarkdown } from "./markdownExport";
@@ -302,15 +303,6 @@ function App() {
 
   // ----- 入出力 -----
 
-  const downloadText = (filename: string, text: string, type: string) => {
-    const blob = new Blob([text], { type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
   const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 4, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
   const exportMarkdown = () => downloadText(`wishlist-export-${today()}.md`, createMarkdown({ themes, refillItems }), "text/markdown");
   const readImportFile = async (file?: File) => {
