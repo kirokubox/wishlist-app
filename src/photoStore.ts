@@ -31,7 +31,7 @@ const openDb = (): Promise<IDBDatabase> => {
         };
         resolve(db);
       };
-      request.onerror = () => reject(request.error ?? new Error("IndexedDBを開けませんでした"));
+      request.onerror = () => reject(request.error ?? new Error("写真の保存場所を開けませんでした"));
     });
     // open失敗をキャッシュしたままにすると二度と復帰できないため、失敗時はキャッシュを捨てる
     dbPromise.catch(() => {

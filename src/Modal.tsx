@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from "react";
-import { X } from "lucide-react";
+import { IconButton } from "./ui";
 
 // ---------- モーダル ----------
 
@@ -13,11 +13,11 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   }, []);
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" aria-hidden="true" />
         <div className="modal-head">
-          <b>{title}</b>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="閉じる"><X size={18} /></button>
+          <h2>{title}</h2>
+          <IconButton icon="x" label="閉じる" onClick={onClose} />
         </div>
         <div className="modal-body">{children}</div>
       </div>

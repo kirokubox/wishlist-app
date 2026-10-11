@@ -26,10 +26,10 @@ export const buildImportPreview = (text: string, existing: WishlistData): Import
   try {
     parsed = JSON.parse(text);
   } catch {
-    return fail("JSONとして読み込めませんでした");
+    return fail("バックアップとして読み込めませんでした。ファイルを選び直してください");
   }
   const incoming = parseStoredData(parsed);
-  if (!incoming) return fail("買いものリストのバックアップ形式ではありません（themes が見つかりません）");
+  if (!incoming) return fail("買いものリストのバックアップではありません");
   const warnings: string[] = [];
   let duplicateThemeCount = 0, duplicateCandidateCount = 0, duplicateRefillCount = 0;
   const newThemes: WishlistTheme[] = [];
