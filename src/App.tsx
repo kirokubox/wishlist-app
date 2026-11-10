@@ -42,10 +42,17 @@ const loadDismissedHints = (): string[] => {
 };
 
 function App() {
-  const [{ themes, refillItems }, setData] = useState<WishlistData>(loadData);
+  const [initialLoad] = useState(loadData);
+  const [{ themes, refillItems }, setData] = useState<WishlistData>(initialLoad.data);
+  const [saveBlocked, setSaveBlocked] = useState(Boolean(initialLoad.recovery));
+  const [storageError, setStorageError] = useState("");
   const [activeView, setActiveView] = useState<ActiveView>(() => {
-    const v = localStorage.getItem(VIEW_KEY);
-    return v === "refill" || v === "bought" || v === "settings" || v === "search" ? v : "search";
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      return v === "refill" || v === "bought" || v === "settings" || v === "search" ? v : "search";
+    } catch {
+      return "search";
+    }
   });
   const [quickTheme, setQuickTheme] = useState("");
   const [quickRefill, setQuickRefill] = useState("");
@@ -73,10 +80,28 @@ function App() {
   const [dismissedHints, setDismissedHints] = useState<string[]>(loadDismissedHints);
 
   useEffect(() => {
-    localStorage.setItem(DATA_KEY, JSON.stringify({ version: 4, themes, refillItems }));
-  }, [themes, refillItems]);
-  useEffect(() => localStorage.setItem(VIEW_KEY, activeView), [activeView]);
-  useEffect(() => localStorage.setItem(HINTS_DISMISSED_KEY, JSON.stringify(dismissedHints)), [dismissedHints]);
+    if (saveBlocked) return;
+    try {
+      localStorage.setItem(DATA_KEY, JSON.stringify({ version: 4, themes, refillItems }));
+      setStorageError("");
+    } catch {
+      setStorageError("保存できませんでした。画面を閉じず、設定からバックアップを保存してください。端末の空き容量も確認してください。");
+    }
+  }, [themes, refillItems, saveBlocked]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, activeView);
+    } catch {
+      setStorageError((current) => current || "画面の状態を端末へ保存できませんでした。端末の空き容量を確認してください。");
+    }
+  }, [activeView]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(HINTS_DISMISSED_KEY, JSON.stringify(dismissedHints));
+    } catch {
+      setStorageError((current) => current || "画面の状態を端末へ保存できませんでした。端末の空き容量を確認してください。");
+    }
+  }, [dismissedHints]);
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), TOAST_MS);
@@ -376,6 +401,7 @@ function App() {
   const applyImport = () => {
     if (!importPreview?.valid) return;
     const preview = importPreview;
+    setSaveBlocked(false);
     setData((current) => ({
       themes: [...preview.newThemes, ...current.themes].map((theme) => {
         const add = preview.candidateAdds.find((g) => g.themeId === theme.id);
@@ -386,6 +412,21 @@ function App() {
     setImportMessage(`追加しました：テーマ ${preview.newThemes.length} 件、候補 ${preview.candidateAdds.reduce((n, g) => n + g.candidates.length, 0) + preview.newThemes.reduce((n, t) => n + t.candidates.length, 0)} 件、補充 ${preview.newRefills.length} 件（すでにあるので飛ばした分：テーマ ${preview.duplicateThemeCount}・候補 ${preview.duplicateCandidateCount}・補充 ${preview.duplicateRefillCount}）`);
     setImportPreview(null);
   };
+
+  const startWithEmptyData = () => setDialog({
+    message: "空の状態から新しく始めますか？",
+    detail: initialLoad.recovery?.backupSucceeded
+      ? `読めなかった元データは「${initialLoad.recovery.backupKey}」へ退避してあります。`
+      : "元データを別の場所へ退避できていません。新しく始めると、現在の保存キーは空のデータで置き換わります。",
+    confirmLabel: "新しく始める",
+    danger: true,
+    onConfirm: () => {
+      setImportPreview(null);
+      setImportMessage("");
+      setData({ themes: [], refillItems: [] });
+      setSaveBlocked(false);
+    },
+  });
 
   // ----- 表示用データ -----
 
@@ -773,17 +814,50 @@ function App() {
   ];
   const closeDialog = () => setDialog(null);
 
+  const renderRecoveryView = () => (
+    <div className="screen-body recovery-screen">
+      <section className="card pad recovery-card" role="alert">
+        <h2>保存データを読めませんでした</h2>
+        <p>空のデータで上書きしないよう、いまは自動保存を止めています。バックアップから戻すか、このまま新しく始めるかを選んでください。</p>
+        {initialLoad.recovery?.backupSucceeded
+          ? <p className="recovery-detail">読めなかった元データは端末内の別キー「{initialLoad.recovery.backupKey}」へ退避しました。</p>
+          : <p className="danger-text">元データを別の場所へ退避できませんでした。端末の空き容量不足や、ブラウザの保存制限が考えられます。</p>}
+        <label className="btn primary recovery-file">
+          バックアップを選ぶ
+          <input type="file" accept="application/json,.json" onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; readImportFile(file); }} />
+        </label>
+        {importPreview && (
+          <div className="recovery-preview">
+            {importPreview.valid ? (
+              <>
+                <p>戻す内容：テーマ {importPreview.newThemes.length}件・候補 {importCandidateCount}件・補充 {importPreview.newRefills.length}件</p>
+                {importPreview.warnings.map((x) => <p className="warning-text" key={x}>{x}</p>)}
+                <button className="btn primary" type="button" onClick={applyImport}>このバックアップから戻す</button>
+              </>
+            ) : importPreview.errors.map((x) => <p className="danger-text" key={x}>{x}</p>)}
+          </div>
+        )}
+        <button className="btn" type="button" onClick={startWithEmptyData}>このまま新しく始める</button>
+      </section>
+    </div>
+  );
+
   return (
     <div className="app-shell">
       <header className="app-bar">
-        <h1 className="app-bar-title">{nav.find((n) => n.id === activeView)?.label}</h1>
+        <h1 className="app-bar-title">{saveBlocked ? "データの復旧" : nav.find((n) => n.id === activeView)?.label}</h1>
       </header>
       <main>
         <div className="screen" key={activeView}>
-          {activeView === "search" && renderSearchView()}
-          {activeView === "refill" && renderRefillView()}
-          {activeView === "bought" && renderBoughtView()}
-          {activeView === "settings" && renderSettingsView()}
+          {saveBlocked ? renderRecoveryView() : (
+            <>
+              {storageError && <div className="save-error" role="alert">{storageError}</div>}
+              {activeView === "search" && renderSearchView()}
+              {activeView === "refill" && renderRefillView()}
+              {activeView === "bought" && renderBoughtView()}
+              {activeView === "settings" && renderSettingsView()}
+            </>
+          )}
         </div>
       </main>
       {editingTheme && <Modal title="テーマを編集" onClose={() => setEditingThemeId("")}>{renderThemeEditForm(editingTheme)}</Modal>}
@@ -820,14 +894,14 @@ function App() {
           <button type="button" className="toast-btn close" aria-label="閉じる" onClick={() => setToast(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
-      <nav className="bottom-tabs" aria-label="画面切り替え">
+      {!saveBlocked && <nav className="bottom-tabs" aria-label="画面切り替え">
         {nav.map(({ id, label, icon }) => (
           <button key={id} type="button" className={activeView === id ? "tab active" : "tab"} aria-current={activeView === id ? "page" : undefined} onClick={() => { setActiveView(id); setEditingThemeId(""); closeCandidateForm(); setPurchaseThemeId(""); setEditingRefillId(""); }}>
             <span className="tab-icon"><Icon name={icon} size={22} /></span>
             <span>{label}</span>
           </button>
         ))}
-      </nav>
+      </nav>}
     </div>
   );
 }

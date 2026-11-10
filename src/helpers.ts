@@ -7,6 +7,7 @@ export const VIEW_KEY = "yuki-wishlist-active-view";
 // 初回だけ見せる説明を閉じたかどうか（画面の表示状態だけ。記録データとは別）
 export const HINTS_DISMISSED_KEY = "yuki-wishlist-hints-dismissed";
 export const PRE_V4_BACKUP_PREFIX = "yuki-wishlist-data-backup-pre-v4-";
+export const CORRUPT_DATA_BACKUP_PREFIX = "yuki-wishlist-data-backup-unreadable-";
 export const categories: Category[] = ["服", "家電", "ガジェット", "日用品", "家具・インテリア", "趣味", "美容・身だしなみ", "その他"];
 export const sats: Satisfaction[] = [5, 4, 3, 2, 1];
 export const satLabels: Record<Satisfaction, string> = { 5: "かなり満足", 4: "よかった", 3: "普通", 2: "微妙", 1: "後悔" };

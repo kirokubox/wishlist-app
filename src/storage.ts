@@ -1,4 +1,4 @@
-import { DATA_KEY, DEFAULT_INTERVAL_MONTHS, PRE_V4_BACKUP_PREFIX, categories, emptyPhotos, makeId, normalizeThemeStatus, now, numOrNull, oneOf, sats, str, today } from "./helpers";
+import { CORRUPT_DATA_BACKUP_PREFIX, DATA_KEY, DEFAULT_INTERVAL_MONTHS, PRE_V4_BACKUP_PREFIX, categories, emptyPhotos, makeId, normalizeThemeStatus, now, numOrNull, oneOf, sats, str, today } from "./helpers";
 import type { CandidatePhotos, RefillItem, Satisfaction, WishlistCandidate, WishlistData, WishlistTheme } from "./types";
 
 // ---------- 読み込み・旧版変換 ----------
@@ -141,11 +141,46 @@ export const parseStoredData = (parsed: unknown): WishlistData | null => {
   return convertV1(root.themes as unknown[]);
 };
 
-export const loadData = (): WishlistData => {
+export type LoadDataResult = {
+  data: WishlistData;
+  recovery: null | {
+    backupKey: string | null;
+    backupSucceeded: boolean;
+  };
+};
+
+const emptyData = (): WishlistData => ({ themes: [], refillItems: [] });
+
+const backUpUnreadableData = (raw: string): LoadDataResult["recovery"] => {
+  const date = today().replaceAll("-", "");
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const backupKey = `${CORRUPT_DATA_BACKUP_PREFIX}${date}${suffix === 0 ? "" : `-${suffix + 1}`}`;
+    try {
+      const existing = localStorage.getItem(backupKey);
+      if (existing === raw) return { backupKey, backupSucceeded: true };
+      if (existing !== null) continue;
+      localStorage.setItem(backupKey, raw);
+      return { backupKey, backupSucceeded: true };
+    } catch {
+      return { backupKey, backupSucceeded: false };
+    }
+  }
+  return { backupKey: null, backupSucceeded: false };
+};
+
+export const loadData = (): LoadDataResult => {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(DATA_KEY);
-    if (!raw) return { themes: [], refillItems: [] };
+    raw = localStorage.getItem(DATA_KEY);
+  } catch {
+    return { data: emptyData(), recovery: { backupKey: null, backupSucceeded: false } };
+  }
+  if (!raw) return { data: emptyData(), recovery: null };
+
+  try {
     const parsed = JSON.parse(raw);
+    const data = parseStoredData(parsed);
+    if (!data) return { data: emptyData(), recovery: backUpUnreadableData(raw) };
     const isVersion4 = !Array.isArray(parsed) && parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).version === 4;
     if (!isVersion4) {
       // 旧形式を変換して上書きする前に、生の文字列を一度だけ退避しておく（v3移行時と同じ保全）
@@ -158,8 +193,8 @@ export const loadData = (): WishlistData => {
         }
       }
     }
-    return parseStoredData(parsed) ?? { themes: [], refillItems: [] };
+    return { data, recovery: null };
   } catch {
-    return { themes: [], refillItems: [] };
+    return { data: emptyData(), recovery: backUpUnreadableData(raw) };
   }
 };

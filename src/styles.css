@@ -130,6 +130,56 @@ main {
   padding: var(--kb-space-4) var(--kb-space-4) var(--kb-space-6);
 }
 
+.save-error {
+  margin: var(--kb-space-4) var(--kb-space-4) 0;
+  border-radius: var(--kb-radius-m);
+  padding: var(--kb-space-3) var(--kb-space-4);
+  background: var(--kb-danger-soft);
+  color: var(--kb-danger);
+  font-size: var(--kb-fs-s);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.recovery-screen {
+  min-height: calc(100vh - var(--kb-bar-h) - env(safe-area-inset-top));
+  align-content: center;
+}
+
+.recovery-card {
+  display: grid;
+  gap: var(--kb-space-4);
+}
+
+.recovery-card > p,
+.recovery-preview p {
+  line-height: 1.7;
+}
+
+.recovery-detail {
+  color: var(--kb-text-2);
+  font-size: var(--kb-fs-s);
+  overflow-wrap: anywhere;
+}
+
+.recovery-file {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recovery-file input {
+  display: none;
+}
+
+.recovery-preview {
+  display: grid;
+  gap: var(--kb-space-3);
+  border-radius: var(--kb-radius-m);
+  padding: var(--kb-space-4);
+  background: var(--kb-surface-2);
+}
+
 @keyframes screen-in {
   from {
     opacity: 0;
