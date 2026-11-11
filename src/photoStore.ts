@@ -96,6 +96,28 @@ export const deletePhoto = async (id: string): Promise<void> => {
   });
 };
 
+export const getPhotos = async (ids: readonly string[]): Promise<Map<string, Blob>> => {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const entries = await Promise.all(unique.map(async (id) => [id, await getPhoto(id)] as const));
+  return new Map(entries.filter((entry): entry is readonly [string, Blob] => entry[1] instanceof Blob));
+};
+
+/** 写真つきバックアップから戻すときだけ使う。現在の写真を消してから、ZIP内の写真へ入れ替える。 */
+export const replacePhotos = async (photos: ReadonlyMap<string, Blob>): Promise<void> => {
+  requestPersistOnce();
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    photos.forEach((blob, id) => store.put(blob, id));
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error ?? new Error("写真の復元を確定できませんでした"));
+    tx.onerror = () => reject(tx.error ?? new Error("写真の復元に失敗しました"));
+  });
+  for (const id of photos.keys()) if (!(await getPhoto(id))) throw new Error(`写真「${id}」を復元後に読み戻せませんでした`);
+};
+
 const drawToJpeg = (source: ImageBitmap | HTMLImageElement, width: number, height: number): Promise<Blob> => {
   const maxSide = 1280;
   const scale = Math.min(1, maxSide / Math.max(width, height));

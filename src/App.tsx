@@ -1,13 +1,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { DATA_KEY, DEFAULT_INTERVAL_MONTHS, HINTS_DISMISSED_KEY, VIEW_KEY, categories, dateLabel, dateShort, emptyPhotos, fmtPrice, isRefillVisible, lastPurchase, mainPhotoId, makeId, nextShowDate, now, photoIdList, photoSlots, releaseDateLabel, satLabels, sats, today } from "./helpers";
-import { downloadText } from "./fileUtils";
+import { downloadBlob, downloadText } from "./fileUtils";
 import { buildImportPreview } from "./importPreview";
 import type { ImportPreview } from "./importPreview";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 import { createMarkdown } from "./markdownExport";
 import { Modal } from "./Modal";
-import { compressImage, deletePhoto, photoErrorMessage, putPhoto } from "./photoStore";
+import { buildPhotoBackup, readPhotoBackup } from "./photoBackup";
+import { compressImage, deletePhoto, photoErrorMessage, putPhoto, replacePhotos } from "./photoStore";
 import { PhotoThumb } from "./PhotoThumb";
 import { loadData } from "./storage";
 import { IconButton, OverflowMenu } from "./ui";
@@ -75,6 +76,7 @@ function App() {
   const [overlayPhoto, setOverlayPhoto] = useState<{ photoId: string; label: string } | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importMessage, setImportMessage] = useState("");
+  const [photoBackupBusy, setPhotoBackupBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [dismissedHints, setDismissedHints] = useState<string[]>(loadDismissedHints);
@@ -392,6 +394,48 @@ function App() {
   // ----- 入出力 -----
 
   const exportJson = () => downloadText(`wishlist-backup-${today()}.json`, JSON.stringify({ version: 4, themes, refillItems, exportedAt: now() }, null, 2), "application/json");
+  const exportWithPhotos = async () => {
+    setPhotoBackupBusy(true);
+    setImportMessage("");
+    try {
+      const backup = await buildPhotoBackup({ themes, refillItems }, now(), today());
+      downloadBlob(backup.fileName, backup.blob);
+      setImportMessage(`写真つきバックアップを保存しました（写真 ${backup.photoCount} 枚）`);
+    } catch (error) {
+      setDialog({ message: "写真つきバックアップを保存できませんでした", detail: photoErrorMessage(error) });
+    } finally {
+      setPhotoBackupBusy(false);
+    }
+  };
+  const choosePhotoBackup = async (file?: File) => {
+    if (!file) return;
+    setImportMessage("写真つきバックアップを確認しています…");
+    try {
+      const backup = await readPhotoBackup(file);
+      const candidateCount = backup.data.themes.reduce((sum, theme) => sum + theme.candidates.length, 0);
+      setImportMessage("");
+      setDialog({
+        message: "写真つきバックアップから戻しますか？",
+        detail: `いまのテーマ・候補・補充・写真を、ZIPの内容（テーマ ${backup.data.themes.length}件・候補 ${candidateCount}件・補充 ${backup.data.refillItems.length}件・写真 ${backup.photoCount}枚）へ入れ替えます。この操作は取り消せません。`,
+        confirmLabel: "写真ごと入れ替える",
+        danger: true,
+        onConfirm: () => {
+          setImportMessage("写真つきバックアップから戻しています…");
+          replacePhotos(backup.photos)
+            .then(() => {
+              setSaveBlocked(false);
+              setData(backup.data);
+              setImportPreview(null);
+              setImportMessage(`写真つきバックアップから戻しました（写真 ${backup.photoCount} 枚）`);
+            })
+            .catch((error) => setDialog({ message: "写真を復元できませんでした", detail: photoErrorMessage(error) }));
+        },
+      });
+    } catch (error) {
+      setImportMessage("");
+      setDialog({ message: "写真つきバックアップを読めませんでした", detail: photoErrorMessage(error) });
+    }
+  };
   const exportMarkdown = () => downloadText(`wishlist-export-${today()}.md`, createMarkdown({ themes, refillItems }), "text/markdown");
   const readImportFile = async (file?: File) => {
     setImportMessage("");
@@ -757,8 +801,17 @@ function App() {
         <div className="card list-rows">
           <button className="row-btn" type="button" onClick={exportJson}>
             <Icon name="download" />
-            <span className="row-main"><span className="row-title">バックアップを保存</span><span className="row-sub">保存・復元用。写真は含まれません</span></span>
+            <span className="row-main"><span className="row-title">写真なしバックアップを保存</span><span className="row-sub">今までと同じJSON。以前のバックアップも使えます</span></span>
           </button>
+          <button className="row-btn" type="button" onClick={exportWithPhotos} disabled={photoBackupBusy}>
+            <Icon name="download" />
+            <span className="row-main"><span className="row-title">{photoBackupBusy ? "写真をまとめています…" : "写真つきバックアップを保存"}</span><span className="row-sub">データと候補の写真をZIPで保存します</span></span>
+          </button>
+          <label className="row-btn">
+            <Icon name="upload" />
+            <span className="row-main"><span className="row-title">写真つきバックアップから戻す</span><span className="row-sub">いまのデータと写真を、確認後にZIPの内容へ入れ替えます</span></span>
+            <input type="file" accept="application/zip,.zip" onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; choosePhotoBackup(file); }} />
+          </label>
           <label className="row-btn">
             <Icon name="upload" />
             <span className="row-main"><span className="row-title">バックアップから追加</span><span className="row-sub">いまのデータは消さず、新しい分だけ足します</span></span>
@@ -795,8 +848,8 @@ function App() {
           <div className="details-body info">
             <ul>
               <li>データと写真はこのブラウザの中に保存されます。PCとスマホで自動同期はされません。</li>
-              <li>ブラウザのサイトデータを削除すると、データも写真も消えます。「バックアップを保存」で定期的に控えを取ってください。</li>
-              <li>写真はバックアップに含まれない「参考用」です。消えて困る写真は端末の写真アプリにも残してください。</li>
+              <li>ブラウザのサイトデータを削除すると、データも写真も消えます。「写真つきバックアップを保存」で定期的にZIPの控えを取ってください。</li>
+              <li>写真なしのJSONは今までどおり使えます。機種変更で写真も移したいときは、写真つきZIPから戻してください。</li>
               <li>バックアップや書き出したファイルには個人的な内容が含まれるため、人に見える場所に置かないでください。</li>
               <li>以前の版で保存したバックアップも読み込めます。</li>
             </ul>
@@ -823,9 +876,14 @@ function App() {
           ? <p className="recovery-detail">読めなかった元データは端末内の別キー「{initialLoad.recovery.backupKey}」へ退避しました。</p>
           : <p className="danger-text">元データを別の場所へ退避できませんでした。端末の空き容量不足や、ブラウザの保存制限が考えられます。</p>}
         <label className="btn primary recovery-file">
-          バックアップを選ぶ
+          写真なしJSONを選ぶ
           <input type="file" accept="application/json,.json" onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; readImportFile(file); }} />
         </label>
+        <label className="btn recovery-file">
+          写真つきZIPを選ぶ
+          <input type="file" accept="application/zip,.zip" onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; choosePhotoBackup(file); }} />
+        </label>
+        {importMessage && <p className="status-line" role="status">{importMessage}</p>}
         {importPreview && (
           <div className="recovery-preview">
             {importPreview.valid ? (
