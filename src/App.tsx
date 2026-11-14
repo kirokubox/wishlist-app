@@ -8,6 +8,7 @@ import type { IconName } from "./Icon";
 import { createMarkdown } from "./markdownExport";
 import { Modal } from "./Modal";
 import { buildPhotoBackup, readPhotoBackup } from "./photoBackup";
+import type { MissingPhotos } from "./photoBackup";
 import { compressImage, deletePhoto, photoErrorMessage, putPhoto, replacePhotos } from "./photoStore";
 import { PhotoThumb } from "./PhotoThumb";
 import { loadData } from "./storage";
@@ -26,6 +27,11 @@ const emptySlotDrafts = (): Record<PhotoSlot, SlotDraft> => ({
 });
 const emptyPurchaseDraft = () => ({ candidateId: "", date: today(), price: "", satisfaction: "", note: "" });
 const clearedPurchase = { status: "未購入" as const, purchasedDate: "", purchasedPrice: null, purchaseNote: "", purchasedCandidateId: "", satisfaction: null };
+const missingPhotosText = ({ photoCount, candidates }: MissingPhotos) => {
+  if (photoCount === 0) return "";
+  const names = candidates.map(({ themeTitle, candidateName, photoCount: count }) => `${themeTitle}（${candidateName}）${count}枚`).join("、");
+  return `入らなかった写真 ${photoCount}枚：${names}`;
+};
 
 // 確認・お知らせのダイアログ。onConfirm が無いときは「閉じる」だけのお知らせになる
 type DialogState = { message: string; detail?: string; confirmLabel?: string; danger?: boolean; onConfirm?: () => void };
@@ -400,7 +406,16 @@ function App() {
     try {
       const backup = await buildPhotoBackup({ themes, refillItems }, now(), today());
       downloadBlob(backup.fileName, backup.blob);
-      setImportMessage(`写真つきバックアップを保存しました（写真 ${backup.photoCount} 枚）`);
+      if (backup.missingPhotos.photoCount > 0) {
+        const detail = missingPhotosText(backup.missingPhotos);
+        setImportMessage(`写真つきバックアップを保存しました（写真 ${backup.photoCount} 枚・入らなかった写真 ${backup.missingPhotos.photoCount} 枚）`);
+        setDialog({
+          message: "写真つきバックアップを保存しました",
+          detail: `読み出せた写真だけをZIPへ入れました。${detail}。候補を開き、写真を撮り直してください。`,
+        });
+      } else {
+        setImportMessage(`写真つきバックアップを保存しました（写真 ${backup.photoCount} 枚）`);
+      }
     } catch (error) {
       setDialog({ message: "写真つきバックアップを保存できませんでした", detail: photoErrorMessage(error) });
     } finally {
@@ -413,10 +428,11 @@ function App() {
     try {
       const backup = await readPhotoBackup(file);
       const candidateCount = backup.data.themes.reduce((sum, theme) => sum + theme.candidates.length, 0);
+      const missingDetail = missingPhotosText(backup.missingPhotos);
       setImportMessage("");
       setDialog({
         message: "写真つきバックアップから戻しますか？",
-        detail: `いまのテーマ・候補・補充・写真を、ZIPの内容（テーマ ${backup.data.themes.length}件・候補 ${candidateCount}件・補充 ${backup.data.refillItems.length}件・写真 ${backup.photoCount}枚）へ入れ替えます。この操作は取り消せません。`,
+        detail: `いまのテーマ・候補・補充・写真を、ZIPの内容（テーマ ${backup.data.themes.length}件・候補 ${candidateCount}件・補充 ${backup.data.refillItems.length}件・写真 ${backup.photoCount}枚）へ入れ替えます。${missingDetail ? `${missingDetail}はZIPに含まれていないため、復元後に「読込失敗」と表示されます。` : ""}この操作は取り消せません。`,
         confirmLabel: "写真ごと入れ替える",
         danger: true,
         onConfirm: () => {
@@ -426,7 +442,9 @@ function App() {
               setSaveBlocked(false);
               setData(backup.data);
               setImportPreview(null);
-              setImportMessage(`写真つきバックアップから戻しました（写真 ${backup.photoCount} 枚）`);
+              setImportMessage(backup.missingPhotos.photoCount > 0
+                ? `写真つきバックアップから戻しました（写真 ${backup.photoCount} 枚・入っていなかった写真 ${backup.missingPhotos.photoCount} 枚）`
+                : `写真つきバックアップから戻しました（写真 ${backup.photoCount} 枚）`);
             })
             .catch((error) => setDialog({ message: "写真を復元できませんでした", detail: photoErrorMessage(error) }));
         },
