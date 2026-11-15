@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": ".test-build",
+    "rootDir": "."
+  },
+  "include": ["src/priceHistory.ts", "tests/*.test.ts"]
+}

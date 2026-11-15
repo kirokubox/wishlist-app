@@ -1,5 +1,6 @@
 import { CORRUPT_DATA_BACKUP_PREFIX, DATA_KEY, DEFAULT_INTERVAL_MONTHS, PRE_V4_BACKUP_PREFIX, categories, emptyPhotos, makeId, normalizeThemeStatus, now, numOrNull, oneOf, sats, str, today } from "./helpers";
 import type { CandidatePhotos, RefillItem, Satisfaction, WishlistCandidate, WishlistData, WishlistTheme } from "./types";
+import { normalizePriceHistory } from "./priceHistory";
 
 // ---------- 読み込み・旧版変換 ----------
 
@@ -20,6 +21,7 @@ export const normalizeCandidate = (value: unknown): WishlistCandidate | null => 
     id: str(item.id) || makeId(),
     shop: str(item.shop),
     price: numOrNull(item.price),
+    priceHistory: normalizePriceHistory(item.priceHistory),
     memo: str(item.memo),
     photos: normalizeCandidatePhotos(item),
     createdAt: str(item.createdAt) || now(),
@@ -99,6 +101,7 @@ export const convertV1 = (rawThemes: unknown[]): WishlistData => {
         id: str(cand.id) || makeId(),
         shop,
         price: numOrNull(cand.price),
+        priceHistory: [],
         memo: str(cand.memo),
         photos: emptyPhotos(),
         createdAt: str(cand.createdAt) || now(),

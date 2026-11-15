@@ -1,5 +1,6 @@
 node_modules
 dist
+.test-build/
 .DS_Store
 wishlist-backup-*.json
 wishlist-export-*.md

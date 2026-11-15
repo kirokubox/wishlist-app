@@ -1,11 +1,12 @@
 // ---------- 型 ----------
+import type { CandidatePriceRecord } from "./priceHistory";
 
 export type Category = "服" | "家電" | "ガジェット" | "日用品" | "家具・インテリア" | "趣味" | "美容・身だしなみ" | "その他";
 export type ThemeStatus = "未購入" | "買った" | "やめた";
 export type Satisfaction = 1 | 2 | 3 | 4 | 5;
 export type ActiveView = "search" | "refill" | "bought" | "settings";
 
-// 候補写真は「値札・全体・試着」のラベル付き3スロット（各1枚・どれか1枚以上必須）
+// 候補写真は「値札・全体・試着」のラベル付き3スロット（各1枚・すべて任意）
 export type PhotoSlot = "tag" | "overall" | "fitting";
 export type CandidatePhotos = Record<PhotoSlot, string | null>;
 
@@ -13,6 +14,7 @@ export type WishlistCandidate = {
   id: string;
   shop: string;
   price: number | null;
+  priceHistory: CandidatePriceRecord[];
   memo: string;
   photos: CandidatePhotos;
   createdAt: string;

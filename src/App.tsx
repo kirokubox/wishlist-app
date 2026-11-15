@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { DATA_KEY, DEFAULT_INTERVAL_MONTHS, HINTS_DISMISSED_KEY, VIEW_KEY, categories, dateLabel, dateShort, emptyPhotos, fmtPrice, isRefillVisible, lastPurchase, mainPhotoId, makeId, nextShowDate, now, photoIdList, photoSlots, releaseDateLabel, satLabels, sats, today } from "./helpers";
+import { APP_VERSION, DATA_KEY, DEFAULT_INTERVAL_MONTHS, HINTS_DISMISSED_KEY, VIEW_KEY, categories, dateLabel, dateShort, emptyPhotos, fmtPrice, isRefillVisible, lastPurchase, mainPhotoId, makeId, nextShowDate, now, photoIdList, photoSlots, releaseDateLabel, satLabels, sats, today } from "./helpers";
 import { downloadBlob, downloadText } from "./fileUtils";
 import { buildImportPreview } from "./importPreview";
 import type { ImportPreview } from "./importPreview";
@@ -11,6 +11,7 @@ import { buildPhotoBackup, readPhotoBackup } from "./photoBackup";
 import type { MissingPhotos } from "./photoBackup";
 import { compressImage, deletePhoto, photoErrorMessage, putPhoto, replacePhotos } from "./photoStore";
 import { PhotoThumb } from "./PhotoThumb";
+import { latestPriceChange, sortPriceHistory } from "./priceHistory";
 import { loadData } from "./storage";
 import { IconButton, OverflowMenu } from "./ui";
 import type { ActiveView, Category, PhotoSlot, RefillItem, Satisfaction, WishlistCandidate, WishlistData, WishlistTheme } from "./types";
@@ -19,6 +20,7 @@ import type { ActiveView, Category, PhotoSlot, RefillItem, Satisfaction, Wishlis
 
 const emptyThemeDraft = { title: "", category: "その他" as Category, releaseDate: "", reason: "", memo: "" };
 const emptyCandidateDraft = { shop: "", price: "", memo: "" };
+const emptyPriceRecordDraft = () => ({ date: today(), price: "" });
 type SlotDraft = { blob: Blob | null; previewUrl: string | null; removed: boolean };
 const emptySlotDrafts = (): Record<PhotoSlot, SlotDraft> => ({
   tag: { blob: null, previewUrl: null, removed: false },
@@ -71,6 +73,8 @@ function App() {
   const [candidateFormThemeId, setCandidateFormThemeId] = useState("");
   const [editingCandidateId, setEditingCandidateId] = useState("");
   const [candidateDraft, setCandidateDraft] = useState(emptyCandidateDraft);
+  const [priceRecordOpen, setPriceRecordOpen] = useState(false);
+  const [priceRecordDraft, setPriceRecordDraft] = useState(emptyPriceRecordDraft);
   const [slotDrafts, setSlotDrafts] = useState<Record<PhotoSlot, SlotDraft>>(emptySlotDrafts());
   const [slotBusyCount, setSlotBusyCount] = useState(0); // 圧縮処理中のスロット数。処理中は保存を押せないようにする
   const [candidateSaving, setCandidateSaving] = useState(false);
@@ -185,7 +189,7 @@ function App() {
     },
   });
 
-  // ----- 候補（写真どれか1枚＋店名が必須。金額・メモは任意） -----
+  // ----- 候補（店名が必須。写真・金額・メモは任意） -----
 
   // モーダルを閉じた・開き直した後に、前のフォームで選んだ写真の圧縮完了が遅れて届いても混入しないよう、
   // フォームの世代番号で古い処理結果を捨てる。
@@ -206,6 +210,8 @@ function App() {
     setEditingCandidateId(candidate?.id ?? "");
     resetSlotDrafts();
     setCandidateDraft(candidate ? { shop: candidate.shop, price: candidate.price === null ? "" : String(candidate.price), memo: candidate.memo } : emptyCandidateDraft);
+    setPriceRecordOpen(false);
+    setPriceRecordDraft(emptyPriceRecordDraft());
     setEditingThemeId("");
     setPurchaseThemeId("");
   };
@@ -215,6 +221,8 @@ function App() {
     setCandidateFormThemeId("");
     setEditingCandidateId("");
     setCandidateDraft(emptyCandidateDraft);
+    setPriceRecordOpen(false);
+    setPriceRecordDraft(emptyPriceRecordDraft());
   };
 
   // 選択した瞬間に読み込み・圧縮してメモリ内Blobにする。
@@ -250,18 +258,6 @@ function App() {
     const shop = candidateDraft.shop.trim();
     if (!shop) return;
     const editing = editingCandidateId ? theme.candidates.find((c) => c.id === editingCandidateId) : undefined;
-    // 「既存スロットのID＋新しく選んだ写真」の合計でどれか1枚以上を求める。
-    // Blobが壊れていてもIDがあれば有効扱い（壊れた候補も編集・差し替えで修復できるように）。
-    const willHavePhoto = photoSlots.some(({ key }) => {
-      const draft = slotDrafts[key];
-      if (draft.blob) return true;
-      if (draft.removed) return false;
-      return Boolean(editing?.photos[key]);
-    });
-    if (!willHavePhoto) {
-      setDialog({ message: "写真をどれか1枚選んでください", detail: "値札・全体・試着のどの枠でもOKです。" });
-      return;
-    }
     setCandidateSaving(true);
     try {
       const newPhotos = emptyPhotos();
@@ -286,7 +282,7 @@ function App() {
         ...t,
         candidates: editing
           ? t.candidates.map((c) => (c.id === editing.id ? { ...c, ...fields, updatedAt: now() } : c))
-          : [...t.candidates, { id: makeId(), ...fields, createdAt: now(), updatedAt: now() }],
+          : [...t.candidates, { id: makeId(), ...fields, priceHistory: [], createdAt: now(), updatedAt: now() }],
       }));
       obsoletePhotoIds.forEach((photoId) => deletePhoto(photoId).catch(() => {}));
       closeCandidateForm();
@@ -307,6 +303,31 @@ function App() {
       updateTheme(theme.id, (t) => ({ ...t, candidates: t.candidates.filter((c) => c.id !== candidate.id) }));
     },
   });
+
+  const addPriceRecord = (theme: WishlistTheme, candidate: WishlistCandidate) => {
+    const price = Number(priceRecordDraft.price);
+    if (!priceRecordDraft.date || priceRecordDraft.price.trim() === "" || !Number.isFinite(price) || price < 0) return;
+    const record = { id: makeId(), date: priceRecordDraft.date, price, createdAt: now() };
+    updateTheme(theme.id, (current) => ({
+      ...current,
+      candidates: current.candidates.map((item) => item.id === candidate.id
+        ? { ...item, price, priceHistory: sortPriceHistory([...item.priceHistory, record]), updatedAt: now() }
+        : item),
+    }));
+    setCandidateDraft((current) => ({ ...current, price: String(price) }));
+    setPriceRecordOpen(false);
+    setPriceRecordDraft(emptyPriceRecordDraft());
+  };
+
+  const deletePriceRecord = (theme: WishlistTheme, candidate: WishlistCandidate, recordId: string) => {
+    const remaining = sortPriceHistory(candidate.priceHistory.filter((record) => record.id !== recordId));
+    const price = remaining[0]?.price ?? null;
+    updateTheme(theme.id, (current) => ({
+      ...current,
+      candidates: current.candidates.map((item) => item.id === candidate.id ? { ...item, price, priceHistory: remaining, updatedAt: now() } : item),
+    }));
+    setCandidateDraft((current) => ({ ...current, price: price === null ? "" : String(price) }));
+  };
 
   // ----- 購入（1ダイアログ・全項目任意。あとから編集も同じフォーム） -----
 
@@ -548,7 +569,7 @@ function App() {
     return (
       <form className="modal-form" onSubmit={(e) => submitCandidate(theme, e)}>
         <div>
-          <span className="field-title">写真（どれか1枚は必須）</span>
+          <span className="field-title">写真（任意）</span>
           <div className="slot-row">
             {photoSlots.map(({ key, label }) => {
               const draft = slotDrafts[key];
@@ -576,6 +597,32 @@ function App() {
           <label>金額（任意）<input type="number" inputMode="numeric" value={candidateDraft.price} onChange={(e) => setCandidateDraft({ ...candidateDraft, price: e.target.value })} /></label>
           <label>メモ（任意）<input value={candidateDraft.memo} onChange={(e) => setCandidateDraft({ ...candidateDraft, memo: e.target.value })} /></label>
         </div>
+        {editing && (
+          <section className="price-history-block">
+            <div className="price-history-head">
+              <span className="field-title">値段の記録</span>
+              {!priceRecordOpen && <button type="button" className="btn small" onClick={() => setPriceRecordOpen(true)}>値段を記録</button>}
+            </div>
+            {priceRecordOpen && (
+              <div className="price-record-form">
+                <label>日付<input type="date" value={priceRecordDraft.date} onChange={(e) => setPriceRecordDraft({ ...priceRecordDraft, date: e.target.value })} /></label>
+                <label>金額<input type="number" inputMode="numeric" min={0} value={priceRecordDraft.price} onChange={(e) => setPriceRecordDraft({ ...priceRecordDraft, price: e.target.value })} /></label>
+                <button type="button" className="btn primary small" disabled={!priceRecordDraft.date || priceRecordDraft.price.trim() === ""} onClick={() => addPriceRecord(theme, editing)}>追加</button>
+                <button type="button" className="text-btn" onClick={() => { setPriceRecordOpen(false); setPriceRecordDraft(emptyPriceRecordDraft()); }}>やめる</button>
+              </div>
+            )}
+            {sortPriceHistory(editing.priceHistory).length > 0 ? (
+              <ul className="price-history-list">
+                {sortPriceHistory(editing.priceHistory).map((record) => (
+                  <li key={record.id}>
+                    <span>{dateLabel(record.date)}</span><b>{fmtPrice(record.price)}</b>
+                    <button type="button" className="icon-btn price-delete" aria-label={`${dateLabel(record.date)}の値段記録を削除`} onClick={() => deletePriceRecord(theme, editing, record.id)}><Icon name="x" size={16} /></button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="meta">記録はまだありません。今の金額だけの候補もそのまま使えます。</p>}
+          </section>
+        )}
         <div className="action-row form-actions">
           <button className="btn primary" type="submit" disabled={candidateSaving || slotBusyCount > 0}>{candidateSaving ? "保存中…" : slotBusyCount > 0 ? "写真を処理中…" : editing ? "候補を保存" : "候補を追加"}</button>
           <button className="btn" type="button" onClick={closeCandidateForm}>キャンセル</button>
@@ -631,6 +678,10 @@ function App() {
 
   const renderCandidateRow = (theme: WishlistTheme, candidate: WishlistCandidate) => {
     const slotsWithPhoto = photoSlots.filter((s) => candidate.photos[s.key]);
+    const priceChange = latestPriceChange(candidate.priceHistory);
+    const priceChangeText = priceChange
+      ? `前回より ${priceChange.amount > 0 ? "+" : "−"}${fmtPrice(Math.abs(priceChange.amount))}（${Number(priceChange.date.slice(5, 7))}月${Number(priceChange.date.slice(8, 10))}日）`
+      : "";
     return (
       <div className="candidate" key={candidate.id}>
         <div className="candidate-main">
@@ -645,7 +696,11 @@ function App() {
           </div>
           <div className="candidate-body">
             <b>{candidate.shop}</b>
-            <p className="meta">{[fmtPrice(candidate.price), `登録 ${dateShort(candidate.createdAt)}`].filter(Boolean).join(" · ")}</p>
+            <p className="meta candidate-price-meta">
+              {candidate.price !== null && <span>{fmtPrice(candidate.price)}</span>}
+              {priceChangeText && <span className="price-change">{priceChangeText}</span>}
+              <span>登録 {dateShort(candidate.createdAt)}</span>
+            </p>
             {candidate.memo && <p className="memo">{candidate.memo}</p>}
           </div>
         </div>
@@ -678,7 +733,7 @@ function App() {
         </div>
       ) : (
         <div className="action-row">
-          <button className="btn small" type="button" onClick={() => openCandidateForm(theme.id)}><Icon name="camera" size={18} />候補を追加</button>
+          <button className="btn small" type="button" onClick={() => openCandidateForm(theme.id)}><Icon name="plus" size={18} />候補を追加</button>
           <button className="btn small" type="button" onClick={() => startPurchase(theme)}><Icon name="circle-check" size={18} />買った</button>
         </div>
       )}
@@ -870,6 +925,7 @@ function App() {
               <li>写真なしのJSONは今までどおり使えます。機種変更で写真も移したいときは、写真つきZIPから戻してください。</li>
               <li>バックアップや書き出したファイルには個人的な内容が含まれるため、人に見える場所に置かないでください。</li>
               <li>以前の版で保存したバックアップも読み込めます。</li>
+              <li>アプリの版：{APP_VERSION}</li>
             </ul>
           </div>
         </details>

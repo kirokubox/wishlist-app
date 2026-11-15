@@ -1,5 +1,6 @@
 import { fmtDate, fmtPrice, isRefillVisible, lastPurchase, nextShowDate, now, photoSlots, satLabels } from "./helpers";
 import type { RefillItem, WishlistCandidate, WishlistData, WishlistTheme } from "./types";
+import { sortPriceHistory } from "./priceHistory";
 
 // ---------- Markdownエクスポート ----------
 
@@ -18,7 +19,10 @@ export const createMarkdown = ({ themes, refillItems }: WishlistData) => {
     const labels = photoSlots.filter((s) => c.photos[s.key]).map((s) => s.label);
     return labels.length ? labels.join("・") : "なし";
   };
-  const candidateBlock = (c: WishlistCandidate) => `- 店名：${md(c.shop)} ／ 金額：${fmtPrice(c.price)} ／ 写真：${photoLabel(c)} ／ 登録日：${fmtDate(c.createdAt)}${c.memo ? ` ／ メモ：${md(c.memo)}` : ""}`;
+  const candidateBlock = (c: WishlistCandidate) => {
+    const history = sortPriceHistory(c.priceHistory).map((record) => `${record.date} ${fmtPrice(record.price)}`).join("、");
+    return `- 店名：${md(c.shop)} ／ 金額：${fmtPrice(c.price)} ／ 写真：${photoLabel(c)} ／ 登録日：${fmtDate(c.createdAt)}${history ? ` ／ 値段の記録：${history}` : ""}${c.memo ? ` ／ メモ：${md(c.memo)}` : ""}`;
+  };
   const themeBlock = (t: WishlistTheme) => `### ${md(t.title)}\n\n- カテゴリ：${t.category}${t.releaseDate ? `\n- 発売日：${t.releaseDate}` : ""}\n- 欲しい理由：${md(t.reason)}\n- メモ：${md(t.memo)}\n- 登録日：${fmtDate(t.createdAt)}${t.candidates.length ? `\n\n候補：\n\n${t.candidates.map(candidateBlock).join("\n")}` : ""}`;
   const boughtBlock = (t: WishlistTheme) => {
     const candidate = t.candidates.find((c) => c.id === t.purchasedCandidateId);

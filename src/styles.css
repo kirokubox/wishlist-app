@@ -695,6 +695,69 @@ h3 {
   cursor: pointer;
 }
 
+.price-change {
+  color: var(--kb-text-2);
+  font-size: var(--kb-fs-xs);
+  font-weight: 600;
+}
+
+.candidate-price-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--kb-space-2);
+}
+
+.price-history-block {
+  display: grid;
+  gap: var(--kb-space-2);
+  padding-top: var(--kb-space-3);
+  border-top: 1px solid var(--kb-line);
+}
+
+.price-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kb-space-2);
+}
+
+.price-record-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--kb-space-2);
+  padding: var(--kb-space-3);
+  border-radius: var(--kb-radius-m);
+  background: var(--kb-surface-2);
+}
+
+.price-record-form .btn,
+.price-record-form .text-btn {
+  min-height: 40px;
+}
+
+.price-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--kb-line);
+}
+
+.price-history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--kb-space-2);
+  min-height: 44px;
+  border-bottom: 1px solid var(--kb-line);
+  font-size: var(--kb-fs-s);
+}
+
+.price-history-list .price-delete {
+  min-width: 36px;
+  min-height: 36px;
+}
+
 /* ---------- 補充 ---------- */
 
 .refill-row {
