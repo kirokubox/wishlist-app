@@ -685,15 +685,18 @@ function App() {
     return (
       <div className="candidate" key={candidate.id}>
         <div className="candidate-main">
-          <div className="thumb-strip">
-            {slotsWithPhoto.length === 0 && <div className="photo-placeholder thumb">写真なし</div>}
-            {slotsWithPhoto.map((s) => (
-              <div className="thumb-wrap" key={s.key}>
-                <PhotoThumb photoId={candidate.photos[s.key]} className="thumb" onClick={() => setOverlayPhoto({ photoId: candidate.photos[s.key]!, label: s.label })} />
-                <span className="thumb-label">{s.label}</span>
-              </div>
-            ))}
-          </div>
+          {/* 写真が1枚も無い候補は、写真の欄ごと出さない（v0.3.1。灰色の「写真なし」の枠が場所を取っていた）。
+              読込失敗（IDはあるが取り出せない）は従来どおり PhotoThumb が出す */}
+          {slotsWithPhoto.length > 0 && (
+            <div className="thumb-strip">
+              {slotsWithPhoto.map((s) => (
+                <div className="thumb-wrap" key={s.key}>
+                  <PhotoThumb photoId={candidate.photos[s.key]} className="thumb" onClick={() => setOverlayPhoto({ photoId: candidate.photos[s.key]!, label: s.label })} />
+                  <span className="thumb-label">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="candidate-body">
             <b>{candidate.shop}</b>
             <p className="meta candidate-price-meta">
