@@ -3,7 +3,7 @@ import type { CandidatePhotos, Category, PhotoSlot, RefillItem, Satisfaction, Th
 // ---------- 定数・小道具 ----------
 
 export const DATA_KEY = "yuki-wishlist-data";
-export const APP_VERSION = "0.3.1";
+export const APP_VERSION = "0.4.0";
 export const VIEW_KEY = "yuki-wishlist-active-view";
 // 初回だけ見せる説明を閉じたかどうか（画面の表示状態だけ。記録データとは別）
 export const HINTS_DISMISSED_KEY = "yuki-wishlist-hints-dismissed";

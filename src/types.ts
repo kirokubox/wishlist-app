@@ -1,5 +1,5 @@
 // ---------- 型 ----------
-import type { CandidatePriceRecord } from "./priceHistory";
+import type { CandidatePriceRecord } from "./priceHistory.js";
 
 export type Category = "服" | "家電" | "ガジェット" | "日用品" | "家具・インテリア" | "趣味" | "美容・身だしなみ" | "その他";
 export type ThemeStatus = "未購入" | "買った" | "やめた";

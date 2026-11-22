@@ -8,5 +8,5 @@
     "outDir": ".test-build",
     "rootDir": "."
   },
-  "include": ["src/priceHistory.ts", "tests/*.test.ts"]
+  "include": ["src/priceHistory.ts", "src/yearlySummary.ts", "src/types.ts", "tests/*.test.ts"]
 }

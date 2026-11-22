@@ -1348,3 +1348,13 @@ h3 {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.bought-year-card { padding: 16px; margin-bottom: 16px; }
+.bought-year-card h2 { margin: 0; font-size: 1.1rem; }
+.bought-year-card h3 { margin: 16px 0 6px; font-size: .9rem; }
+.bought-year-card ul { margin: 6px 0; padding-left: 1.3em; }
+.bought-year-card li { margin: 5px 0; }
+.bought-year-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.bought-year-nav h2 { flex: 1 1 100%; }
+.bought-year-nav button { border: 1px solid var(--kb-line); border-radius: 7px; background: transparent; color: inherit; padding: 6px 10px; font: inherit; }
+.bought-year-nav button:disabled { opacity: .4; }
