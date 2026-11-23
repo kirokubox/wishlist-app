@@ -14,7 +14,7 @@ import { PhotoThumb } from "./PhotoThumb";
 import { latestPriceChange, sortPriceHistory } from "./priceHistory";
 import { loadData } from "./storage";
 import { IconButton, OverflowMenu } from "./ui";
-import { purchaseYears, yearlySummary } from "./yearlySummary";
+import { purchaseYears, refillIntervalLabel, yearlySummary } from "./yearlySummary";
 import type { ActiveView, Category, PhotoSlot, RefillItem, Satisfaction, WishlistCandidate, WishlistData, WishlistTheme } from "./types";
 
 // ---------- 本体 ----------
@@ -781,7 +781,7 @@ function App() {
     <div className="refill-row" key={item.id}>
       <div className="row-main">
         <b className="row-title">{item.name}</b>
-        <p className="row-sub">{lastPurchase(item) ? `前回 ${dateShort(lastPurchase(item))}` : "まだ買っていない"} · {item.intervalMonths}ヶ月ごと</p>
+        <p className="row-sub">{lastPurchase(item) ? `前回 ${dateShort(lastPurchase(item))}` : "まだ買っていない"} · {item.intervalMonths}ヶ月ごと{refillIntervalLabel(item) && ` · ${refillIntervalLabel(item)}`}</p>
       </div>
       <button className="btn small primary" type="button" onClick={() => buyRefill(item)}><Icon name="circle-check" size={18} />買った</button>
       <IconButton icon="pencil" label={`「${item.name}」を編集`} onClick={() => startEditRefill(item)} />
@@ -814,7 +814,7 @@ function App() {
               <div className="refill-row waiting" key={item.id}>
                 <div className="row-main">
                   <b className="row-title">{item.name}</b>
-                  <p className="row-sub">前回 {dateShort(lastPurchase(item))} · 次に出る日 {dateShort(nextShowDate(item))}</p>
+                  <p className="row-sub">前回 {dateShort(lastPurchase(item))} · 次に出る日 {dateShort(nextShowDate(item))}{refillIntervalLabel(item) && ` · ${refillIntervalLabel(item)}`}</p>
                 </div>
                 <OverflowMenu
                   label={`「${item.name}」の操作`}
@@ -860,7 +860,7 @@ function App() {
   const renderBoughtView = () => {
     const years = purchaseYears(themes);
     const year = selectedBoughtYear !== null && years.includes(selectedBoughtYear) ? selectedBoughtYear : years[years.length - 1];
-    const current = year === undefined ? null : yearlySummary(themes, refillItems, year);
+    const current = year === undefined ? null : yearlySummary(themes, year);
     const index = year === undefined ? -1 : years.indexOf(year);
     if (boughtYearOpen && current && year !== undefined) return <div className="screen-body bought-year-screen"><section className="card bought-year-card" aria-label="年に買ったもの">
       <div className="bought-year-nav"><button type="button" className="icon-btn" aria-label="前の年" disabled={index === 0} onClick={() => setSelectedBoughtYear(years[index - 1])}><Icon name="chevron-left" size={20} /></button><h2>{year}年</h2><button type="button" className="icon-btn" aria-label="次の年" disabled={index === years.length - 1} onClick={() => setSelectedBoughtYear(years[index + 1])}><Icon name="chevron-right" size={20} /></button></div>
@@ -868,7 +868,7 @@ function App() {
       <h3>分類ごとの額</h3><ul>{current.categoryTotals.map(([category, amount]) => <li key={category}>{category} {fmtPrice(amount)}</li>)}</ul>
       <h3>満足度ごとの件数</h3><div className="bought-satisfaction">{sats.map((sat) => { const count = current.satisfactionCounts.get(sat) ?? 0; return <div className="bought-satisfaction-row" key={sat}><span>{satLabels[sat]}</span><div className="bought-satisfaction-track"><i style={{ width: `${current.count ? count / current.count * 100 : 0}%` }} /></div><span>{count}件</span></div>; })}</div>
       <h3>候補に入れてから買うまで</h3><p>中央値 {current.medianDays === null ? "—" : `${current.medianDays}日`}・最長 {current.longest ? `${current.longest.title} ${current.longest.days}日` : "—"}</p>
-      {current.refillIntervals.length > 0 && <><h3>補充品の購入間隔</h3><ul>{current.refillIntervals.map((item) => <li key={item.id}>{item.name}　目安 {item.intervalMonths}か月・実際 平均 約{(item.averageDays / 30.44).toFixed(1)}か月</li>)}</ul></>}
+
     </section></div>;
     return <div className="screen-body">
       {current && year !== undefined && <button type="button" className="card bought-year-entry" onClick={() => setBoughtYearOpen(true)}><span>{year}年に買ったもの</span><span>{current.count}件・{fmtPrice(current.totalPrice)}</span><Icon name="chevron-right" size={18} /></button>}

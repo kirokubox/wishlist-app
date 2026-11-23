@@ -16,7 +16,7 @@ export function purchaseYears(themes: readonly WishlistTheme[]): number[] {
   return [...new Set(themes.filter((item) => item.status === "買った" && /^\d{4}-\d{2}-\d{2}$/.test(item.purchasedDate)).map((item) => Number(item.purchasedDate.slice(0, 4))))].sort((a, b) => a - b);
 }
 
-export function yearlySummary(themes: readonly WishlistTheme[], refills: readonly RefillItem[], year: number) {
+export function yearlySummary(themes: readonly WishlistTheme[], year: number) {
   const items = themes.filter((item) => item.status === "買った" && item.purchasedDate.startsWith(`${year}-`));
   const priced = items.filter((item) => item.purchasedPrice !== null);
   const categoryTotals = new Map<Category, number>();
@@ -32,14 +32,24 @@ export function yearlySummary(themes: readonly WishlistTheme[], refills: readonl
   leadTimes.sort((a, b) => a.days - b.days);
   const middle = Math.floor(leadTimes.length / 2);
   const medianDays = leadTimes.length === 0 ? null : leadTimes.length % 2 ? leadTimes[middle].days : (leadTimes[middle - 1].days + leadTimes[middle].days) / 2;
-  const refillIntervals = refills.filter((item) => item.purchases.some((date) => date.startsWith(`${year}-`))).flatMap((item) => {
-    const dates = [...new Set(item.purchases.map(dayNumber).filter((day): day is number => day !== null))].sort((a, b) => a - b);
-    if (dates.length < 2) return [];
-    const intervals = dates.slice(1).map((day, index) => day - dates[index]);
-    const averageDays = intervals.reduce((sum, days) => sum + days, 0) / intervals.length;
-    return [{ id: item.id, name: item.name, averageDays, intervalMonths: item.intervalMonths, differenceDays: averageDays - item.intervalMonths * 30.44 }];
-  });
   return { year, count: items.length, totalPrice: priced.reduce((sum, item) => sum + item.purchasedPrice!, 0), missingPrices: items.length - priced.length,
     categoryTotals: [...categoryTotals].sort((a, b) => b[1] - a[1]), satisfactionCounts,
-    medianDays, longest: leadTimes[leadTimes.length - 1] ?? null, refillIntervals };
+    medianDays, longest: leadTimes[leadTimes.length - 1] ?? null };
+}
+
+/**
+ * 補充品の実際の買う間隔（すべての購入から。年で区切らない）。2回以上買った品目だけ。
+ * 2026-11-23：「今年買ったもの」から補充品の画面へ移した（本人「移す」）。
+ */
+export function refillInterval(item: RefillItem): { averageDays: number; count: number } | null {
+  const dates = [...new Set(item.purchases.map(dayNumber).filter((day): day is number => day !== null))].sort((a, b) => a - b);
+  if (dates.length < 2) return null;
+  const intervals = dates.slice(1).map((day, index) => day - dates[index]);
+  return { averageDays: intervals.reduce((sum, days) => sum + days, 0) / intervals.length, count: dates.length };
+}
+
+/** 画面用：「実際 約3.4か月」（1か月＝30.44日で月にそろえる。小数1桁） */
+export function refillIntervalLabel(item: RefillItem): string | null {
+  const interval = refillInterval(item);
+  return interval ? `実際 約${(interval.averageDays / 30.44).toFixed(1)}か月` : null;
 }
