@@ -70,6 +70,8 @@ function App() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [boughtFilters, setBoughtFilters] = useState({ keyword: "", satisfaction: "すべて" });
   const [selectedBoughtYear, setSelectedBoughtYear] = useState<number | null>(null);
+  const [boughtYearOpen, setBoughtYearOpen] = useState(false);
+  useEffect(() => { if (activeView !== "bought") setBoughtYearOpen(false); }, [activeView]);
   const [editingThemeId, setEditingThemeId] = useState("");
   const [themeDraft, setThemeDraft] = useState(emptyThemeDraft);
   const [candidateFormThemeId, setCandidateFormThemeId] = useState("");
@@ -855,23 +857,21 @@ function App() {
     );
   };
 
-  const renderBoughtView = () => (
-    <div className="screen-body">
-      {(() => {
-        const years = purchaseYears(themes);
-        const year = selectedBoughtYear !== null && years.includes(selectedBoughtYear) ? selectedBoughtYear : years[years.length - 1];
-        if (year === undefined) return null;
-        const current = yearlySummary(themes, refillItems, year);
-        const index = years.indexOf(year);
-        return <section className="card bought-year-card" aria-label="今年買ったもの">
-          <div className="bought-year-nav"><h2>{year}年に買ったもの</h2><button type="button" disabled={index === 0} onClick={() => setSelectedBoughtYear(years[index - 1])}>‹ 前の年</button><button type="button" disabled={index === years.length - 1} onClick={() => setSelectedBoughtYear(years[index + 1])}>次の年 ›</button></div>
-          <p>{current.count}件・{fmtPrice(current.totalPrice)}{current.missingPrices > 0 && `・値段なし ${current.missingPrices}件`}</p>
-          <h3>分類ごとの額</h3><ul>{current.categoryTotals.map(([category, amount]) => <li key={category}>{category} {fmtPrice(amount)}</li>)}</ul>
-          <h3>満足度ごとの件数</h3><p>{sats.map((sat) => `${sat}：${current.satisfactionCounts.get(sat) ?? 0}件`).join(" ／ ")}</p>
-          <h3>候補に入れてから買うまで</h3><p>中央値 {current.medianDays === null ? "—" : `${current.medianDays}日`}・最長 {current.longest ? `${current.longest.title} ${current.longest.days}日` : "—"}</p>
-          {current.refillIntervals.length > 0 && <><h3>補充品の購入間隔</h3><ul>{current.refillIntervals.map((item) => <li key={item.id}>{item.name}：実際 平均{Math.round(item.averageDays)}日／目安 {item.intervalMonths}か月（差 約{item.differenceDays >= 0 ? "+" : ""}{Math.round(item.differenceDays)}日）</li>)}</ul><p className="meta">目安の月は1か月約30.44日として比較。</p></>}
-        </section>;
-      })()}
+  const renderBoughtView = () => {
+    const years = purchaseYears(themes);
+    const year = selectedBoughtYear !== null && years.includes(selectedBoughtYear) ? selectedBoughtYear : years[years.length - 1];
+    const current = year === undefined ? null : yearlySummary(themes, refillItems, year);
+    const index = year === undefined ? -1 : years.indexOf(year);
+    if (boughtYearOpen && current && year !== undefined) return <div className="screen-body bought-year-screen"><section className="card bought-year-card" aria-label="年に買ったもの">
+      <div className="bought-year-nav"><button type="button" className="icon-btn" aria-label="前の年" disabled={index === 0} onClick={() => setSelectedBoughtYear(years[index - 1])}><Icon name="chevron-left" size={20} /></button><h2>{year}年</h2><button type="button" className="icon-btn" aria-label="次の年" disabled={index === years.length - 1} onClick={() => setSelectedBoughtYear(years[index + 1])}><Icon name="chevron-right" size={20} /></button></div>
+      <p>{current.count}件・{fmtPrice(current.totalPrice)}{current.missingPrices > 0 && `・値段なし ${current.missingPrices}件`}</p>
+      <h3>分類ごとの額</h3><ul>{current.categoryTotals.map(([category, amount]) => <li key={category}>{category} {fmtPrice(amount)}</li>)}</ul>
+      <h3>満足度ごとの件数</h3><div className="bought-satisfaction">{sats.map((sat) => { const count = current.satisfactionCounts.get(sat) ?? 0; return <div className="bought-satisfaction-row" key={sat}><span>{satLabels[sat]}</span><div className="bought-satisfaction-track"><i style={{ width: `${current.count ? count / current.count * 100 : 0}%` }} /></div><span>{count}件</span></div>; })}</div>
+      <h3>候補に入れてから買うまで</h3><p>中央値 {current.medianDays === null ? "—" : `${current.medianDays}日`}・最長 {current.longest ? `${current.longest.title} ${current.longest.days}日` : "—"}</p>
+      {current.refillIntervals.length > 0 && <><h3>補充品の購入間隔</h3><ul>{current.refillIntervals.map((item) => <li key={item.id}>{item.name}　目安 {item.intervalMonths}か月・実際 平均 約{(item.averageDays / 30.44).toFixed(1)}か月</li>)}</ul></>}
+    </section></div>;
+    return <div className="screen-body">
+      {current && year !== undefined && <button type="button" className="card bought-year-entry" onClick={() => setBoughtYearOpen(true)}><span>{year}年に買ったもの</span><span>{current.count}件・{fmtPrice(current.totalPrice)}</span><Icon name="chevron-right" size={18} /></button>}
       <div className="filters">
         <label className="search-box"><Icon name="search" size={18} /><input value={boughtFilters.keyword} onChange={(e) => setBoughtFilters({ ...boughtFilters, keyword: e.target.value })} placeholder="検索" aria-label="買ったものを検索" /></label>
         <select value={boughtFilters.satisfaction} aria-label="満足度で絞り込む" onChange={(e) => setBoughtFilters({ ...boughtFilters, satisfaction: e.target.value })}>
@@ -882,8 +882,8 @@ function App() {
       {boughtThemes.length > 0
         ? <div className="card list-rows">{boughtThemes.map(renderBoughtRow)}</div>
         : <p className="empty">買ったテーマはまだありません。</p>}
-    </div>
-  );
+    </div>;
+  };
 
   const importCandidateCount = importPreview ? importPreview.candidateAdds.reduce((n, g) => n + g.candidates.length, 0) + importPreview.newThemes.reduce((n, t) => n + t.candidates.length, 0) : 0;
 
@@ -997,7 +997,8 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-bar">
-        <h1 className="app-bar-title">{saveBlocked ? "データの復旧" : nav.find((n) => n.id === activeView)?.label}</h1>
+        {activeView === "bought" && boughtYearOpen && !saveBlocked && <button type="button" className="icon-btn" aria-label="買ったものへ戻る" onClick={() => setBoughtYearOpen(false)}><Icon name="chevron-left" size={20} /></button>}
+        <h1 className="app-bar-title">{saveBlocked ? "データの復旧" : activeView === "bought" && boughtYearOpen ? `${selectedBoughtYear ?? purchaseYears(themes).slice(-1)[0]}年に買ったもの` : nav.find((n) => n.id === activeView)?.label}</h1>
       </header>
       <main>
         <div className="screen" key={activeView}>

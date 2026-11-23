@@ -1354,7 +1354,13 @@ h3 {
 .bought-year-card h3 { margin: 16px 0 6px; font-size: .9rem; }
 .bought-year-card ul { margin: 6px 0; padding-left: 1.3em; }
 .bought-year-card li { margin: 5px 0; }
-.bought-year-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.bought-year-nav h2 { flex: 1 1 100%; }
-.bought-year-nav button { border: 1px solid var(--kb-line); border-radius: 7px; background: transparent; color: inherit; padding: 6px 10px; font: inherit; }
+.bought-year-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bought-year-nav h2 { margin: 0; text-align: center; }
+.bought-year-nav button { background: transparent; }
 .bought-year-nav button:disabled { opacity: .4; }
+.bought-year-entry { display: flex; align-items: center; gap: 8px; width: 100%; padding: 14px 16px; margin-bottom: 16px; border: 0; color: inherit; font: inherit; text-align: left; }
+.bought-year-entry span:nth-child(2) { flex: 1; text-align: right; }
+.bought-satisfaction { display: grid; gap: 8px; }
+.bought-satisfaction-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 36px; align-items: center; gap: 8px; font-size: .85rem; }
+.bought-satisfaction-track { height: 8px; border-radius: 4px; background: var(--kb-surface-2); overflow: hidden; }
+.bought-satisfaction-track i { display: block; height: 100%; background: var(--kb-accent); }
