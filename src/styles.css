@@ -1364,3 +1364,6 @@ h3 {
 .bought-satisfaction-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 36px; align-items: center; gap: 8px; font-size: .85rem; }
 .bought-satisfaction-track { height: 8px; border-radius: 4px; background: var(--kb-surface-2); overflow: hidden; }
 .bought-satisfaction-track i { display: block; height: 100%; background: var(--kb-accent); }
+
+/* 上のバーの右端の歯車（v0.6.0。設定を下のタブから移した） */
+.app-bar-end { margin-left: auto; }

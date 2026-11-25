@@ -56,10 +56,12 @@ function App() {
   const [{ themes, refillItems }, setData] = useState<WishlistData>(initialLoad.data);
   const [saveBlocked, setSaveBlocked] = useState(Boolean(initialLoad.recovery));
   const [storageError, setStorageError] = useState("");
+  /** 設定を開く前のタブ（設定の「‹」で戻る先。v0.6.0） */
+  const [backView, setBackView] = useState<ActiveView>("search");
   const [activeView, setActiveView] = useState<ActiveView>(() => {
     try {
       const v = localStorage.getItem(VIEW_KEY);
-      return v === "refill" || v === "bought" || v === "settings" || v === "search" ? v : "search";
+      return v === "refill" || v === "bought" || v === "search" ? v : "search";
     } catch {
       return "search";
     }
@@ -890,19 +892,19 @@ function App() {
   const renderSettingsView = () => (
     <div className="screen-body">
       <section className="list-section">
-        <h2 className="section-title">バックアップ</h2>
+        <h2 className="section-title">データ</h2>
         <div className="card list-rows">
           <button className="row-btn" type="button" onClick={exportJson}>
             <Icon name="download" />
-            <span className="row-main"><span className="row-title">写真なしバックアップを保存</span><span className="row-sub">今までと同じJSON。以前のバックアップも使えます</span></span>
+            <span className="row-main"><span className="row-title">バックアップを保存</span><span className="row-sub">写真は入りません。以前のバックアップも読み込めます</span></span>
           </button>
           <button className="row-btn" type="button" onClick={exportWithPhotos} disabled={photoBackupBusy}>
             <Icon name="download" />
-            <span className="row-main"><span className="row-title">{photoBackupBusy ? "写真をまとめています…" : "写真つきバックアップを保存"}</span><span className="row-sub">データと候補の写真をZIPで保存します</span></span>
+            <span className="row-main"><span className="row-title">{photoBackupBusy ? "写真をまとめています…" : "写真つきバックアップを保存"}</span><span className="row-sub">データと候補の写真を1つのファイルに保存します</span></span>
           </button>
           <label className="row-btn">
             <Icon name="upload" />
-            <span className="row-main"><span className="row-title">写真つきバックアップから戻す</span><span className="row-sub">いまのデータと写真を、確認後にZIPの内容へ入れ替えます</span></span>
+            <span className="row-main"><span className="row-title">写真つきバックアップから戻す</span><span className="row-sub">確認のあと、いまのデータと写真を入れ替えます</span></span>
             <input type="file" accept="application/zip,.zip" onChange={(e) => { const file = e.target.files?.[0]; e.currentTarget.value = ""; choosePhotoBackup(file); }} />
           </label>
           <label className="row-btn">
@@ -941,8 +943,8 @@ function App() {
           <div className="details-body info">
             <ul>
               <li>データと写真はこのブラウザの中に保存されます。PCとスマホで自動同期はされません。</li>
-              <li>ブラウザのサイトデータを削除すると、データも写真も消えます。「写真つきバックアップを保存」で定期的にZIPの控えを取ってください。</li>
-              <li>写真なしのJSONは今までどおり使えます。機種変更で写真も移したいときは、写真つきZIPから戻してください。</li>
+              <li>ブラウザのサイトデータを削除すると、データも写真も消えます。「写真つきバックアップを保存」で定期的に控えを取ってください。</li>
+              <li>機種変更で写真も移したいときは、写真つきバックアップから戻してください。</li>
               <li>バックアップや書き出したファイルには個人的な内容が含まれるため、人に見える場所に置かないでください。</li>
               <li>以前の版で保存したバックアップも読み込めます。</li>
               <li>アプリの版：{APP_VERSION}</li>
@@ -957,7 +959,6 @@ function App() {
     { id: "search", label: "ほしいもの", icon: "shopping-bag" },
     { id: "refill", label: "補充", icon: "rotate-ccw" },
     { id: "bought", label: "買った", icon: "circle-check" },
-    { id: "settings", label: "設定", icon: "settings" },
   ];
   const closeDialog = () => setDialog(null);
 
@@ -998,7 +999,9 @@ function App() {
     <div className="app-shell">
       <header className="app-bar">
         {activeView === "bought" && boughtYearOpen && !saveBlocked && <button type="button" className="icon-btn" aria-label="買ったものへ戻る" onClick={() => setBoughtYearOpen(false)}><Icon name="chevron-left" size={20} /></button>}
-        <h1 className="app-bar-title">{saveBlocked ? "データの復旧" : activeView === "bought" && boughtYearOpen ? `${selectedBoughtYear ?? purchaseYears(themes).slice(-1)[0]}年に買ったもの` : nav.find((n) => n.id === activeView)?.label}</h1>
+        {activeView === "settings" && !saveBlocked && <button type="button" className="icon-btn" aria-label="戻る" onClick={() => setActiveView(backView)}><Icon name="chevron-left" size={20} /></button>}
+        <h1 className="app-bar-title">{saveBlocked ? "データの復旧" : activeView === "settings" ? "設定" : activeView === "bought" && boughtYearOpen ? `${selectedBoughtYear ?? purchaseYears(themes).slice(-1)[0]}年に買ったもの` : nav.find((n) => n.id === activeView)?.label}</h1>
+        {activeView !== "settings" && !saveBlocked && !(activeView === "bought" && boughtYearOpen) && <button type="button" className="icon-btn app-bar-end" aria-label="設定" onClick={() => { setBackView(activeView); setActiveView("settings"); }}><Icon name="settings" size={20} /></button>}
       </header>
       <main>
         <div className="screen" key={activeView}>
@@ -1047,7 +1050,7 @@ function App() {
           <button type="button" className="toast-btn close" aria-label="閉じる" onClick={() => setToast(null)}><Icon name="x" size={16} /></button>
         </div>
       )}
-      {!saveBlocked && <nav className="bottom-tabs" aria-label="画面切り替え">
+      {!saveBlocked && activeView !== "settings" && <nav className="bottom-tabs" aria-label="画面切り替え">
         {nav.map(({ id, label, icon }) => (
           <button key={id} type="button" className={activeView === id ? "tab active" : "tab"} aria-current={activeView === id ? "page" : undefined} onClick={() => { setActiveView(id); setEditingThemeId(""); closeCandidateForm(); setPurchaseThemeId(""); setEditingRefillId(""); }}>
             <span className="tab-icon"><Icon name={icon} size={22} /></span>
